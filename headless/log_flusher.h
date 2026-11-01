@@ -13,10 +13,52 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdio>
+#include <filesystem>
+#include <fstream>
 #include <mutex>
+#include <string>
 #include <thread>
+#include "storage_paths.h"
 
 namespace Eden {
+
+inline void MirrorLogsToMountedUsb() noexcept {
+    try {
+        std::string usb_mount;
+        for (int i = 0; i <= 7; ++i) {
+            const std::string candidate = "/mnt/usb" + std::to_string(i);
+            std::error_code ec;
+            if (std::filesystem::is_directory(candidate, ec)) {
+                usb_mount = candidate;
+                break;
+            }
+        }
+        if (usb_mount.empty()) return;
+
+        const std::string logs_dir = usb_mount + "/eglantine_logs";
+        std::error_code ec;
+        std::filesystem::create_directories(logs_dir, ec);
+        if (ec) return;
+
+        auto copy_file_safe = [&](const std::string& src, const std::string& dst) {
+            std::error_code err;
+            if (!std::filesystem::exists(src, err)) return;
+            std::ifstream in(src, std::ios::binary);
+            if (!in) return;
+            std::ofstream out(dst, std::ios::binary | std::ios::trunc);
+            if (!out) return;
+            out << in.rdbuf();
+            out.flush();
+        };
+
+        copy_file_safe(LogFile("stderr.log"), logs_dir + "/stderr.log");
+        copy_file_safe(LogFile("heap.log"), logs_dir + "/heap.log");
+        copy_file_safe(UserDir() + "/log/eden_log.txt", logs_dir + "/eden_log.txt");
+        copy_file_safe(LogFile("stderr.prev.log"), logs_dir + "/stderr.prev.log");
+        copy_file_safe(LogFile("crash-note.txt"), logs_dir + "/crash-note.txt");
+    } catch (...) {}
+}
+
 class LogFlusher {
 public:
     LogFlusher() = default;
@@ -48,6 +90,7 @@ public:
         }
         wake.notify_all();
         worker.join();
+        MirrorLogsToMountedUsb();
     }
 
 private:
@@ -59,6 +102,7 @@ private:
             }
             std::fflush(stderr);
             std::fflush(stdout);
+            MirrorLogsToMountedUsb();
         }
     }
 

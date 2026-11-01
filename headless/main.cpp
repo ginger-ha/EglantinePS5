@@ -301,6 +301,7 @@ int main(int argc, char** argv) {
         // unless Settings > Diagnostics asks for every line at once (to find a crash).
         static Eden::LogFlusher log_flusher;
         if (!log_flusher.Start(Eden::LoadPreferences().immediate_logs)) return 2;
+        Eden::MirrorLogsToMountedUsb();
         Eden::Crash::Install(Eden::LogsDir(), Eden::kAppVersion, last_crash.restarted);
         Eden::BootTrace::Ready(Eden::LogsDir(), Eden::FilesystemAccess());
         Eden::BootTrace::Line("logs and crash handler ready (%s)", Eden::LogsDir().c_str());
@@ -604,6 +605,9 @@ int main(int argc, char** argv) {
         const bool game = std::filesystem::is_regular_file(selected_game);
         if (!game) throw std::runtime_error("Selected ROM is no longer available");
         const char* guest = selected_game.c_str();
+        std::fprintf(stderr, "[EglantinePS5] Selected game to run: %s, backend: %s\n", guest, Eden::BackendName(backend));
+        std::fflush(stderr);
+        Eden::MirrorLogsToMountedUsb();
         // The audio and the renderer read this game's own settings (Library > Game settings).
 #ifdef PS5_NATIVE
         const uint64_t game_title = game ? eden_game_title_id(guest) : 0;
@@ -1304,6 +1308,9 @@ int main(int argc, char** argv) {
 #endif
                 Eden::Loading::Set(Eden::Loading::Step::game);
                 Eden::BootTrace::Line("loading the game");
+                std::fprintf(stderr, "[EglantinePS5] Calling system.Load()...\n");
+                std::fflush(stderr);
+                Eden::MirrorLogsToMountedUsb();
                 Core::SystemResultStatus loaded;
                 try {
                     loaded = system.Load(window, guest, params);
@@ -1321,6 +1328,9 @@ int main(int argc, char** argv) {
                     throw std::runtime_error("Loader status " + std::to_string(static_cast<unsigned>(loaded)) +
                         ". Check this ROM, its keys and firmware; see stderr.log.");
                 }
+                std::fprintf(stderr, "[EglantinePS5] Core load succeeded! status=%u\n", static_cast<unsigned>(loaded));
+                std::fflush(stderr);
+                Eden::MirrorLogsToMountedUsb();
 #ifdef PS5_NATIVE
                 if (game) {
                     const auto filename = std::filesystem::path(guest).filename().string();
@@ -1479,7 +1489,13 @@ int main(int argc, char** argv) {
                 }
                 Eden::TakeGuestFault(); // Nothing from an earlier session belongs to this one.
                 Eden::Loading::Set(Eden::Loading::Step::starting);
+                std::fprintf(stderr, "[EglantinePS5] Starting guest execution with system.Run()...\n");
+                std::fflush(stderr);
+                Eden::MirrorLogsToMountedUsb();
                 system.Run();
+                std::fprintf(stderr, "[EglantinePS5] system.Run() active, guest is executing!\n");
+                std::fflush(stderr);
+                Eden::MirrorLogsToMountedUsb();
 #if defined(EDEN_DEV_PROFILE) && defined(PS5_NATIVE)
                 Eden::Stall::Trace("main running");
                 Eden::Stall::Disarm();

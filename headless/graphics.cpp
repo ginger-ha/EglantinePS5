@@ -317,6 +317,10 @@ public:
         const auto text = FormatHudText(clock, speed_percent, "OGL", RoomPingMilliseconds());
         if (hud_enabled.load(std::memory_order_relaxed)) DrawHud(text.data(), false);
         Check(eglSwapBuffers(display, surface), "eglSwapBuffers");
+        if (presented_frames == 1) {
+            std::fprintf(stderr, "[EglantinePS5] First OpenGL frame displayed!\n");
+            std::fflush(stderr);
+        }
     }
     void PresentLoading() {
         const double now = Now();
@@ -649,6 +653,10 @@ void GraphicsWindow::OnFrameDisplayed() {
                             RoomPingMilliseconds());
 #endif
         ++frame_total;
+        if (frame_total == 1) {
+            std::fprintf(stderr, "[EglantinePS5] First Vulkan frame displayed!\n");
+            std::fflush(stderr);
+        }
         // What a recorded controller session counts frames by (gameplay_test.h): the input
         // worker runs on another thread, so it reads a copy rather than the member.
         Display::gameplay_frame.store(frame_total, std::memory_order_relaxed);
