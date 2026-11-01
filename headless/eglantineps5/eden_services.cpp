@@ -981,16 +981,20 @@ static std::vector<std::string> NfsGames(const std::set<std::string>& local) {
 static std::vector<std::string> UsbGames(const std::set<std::string>& taken, std::map<std::string, std::string>& labels) {
     std::vector<std::pair<std::string, const char*>> roots;
     for (int drive = 0; drive < 8; ++drive) {
-        const std::string root = "/mnt/usb" + std::to_string(drive) + "/games";
-        if (Eden::DirectoryExists(root)) roots.emplace_back(root, "USB");
+        for (const char* sub : {"/games", "/nx2", "/roms"}) {
+            const std::string root = "/mnt/usb" + std::to_string(drive) + sub;
+            if (Eden::DirectoryExists(root)) roots.emplace_back(root, "USB");
+        }
     }
     // The NTFS disks: looked for each time (a disk may have been plugged in), and read through the app's own reader.
     (void)ntfsfs_scan();
     static char volumes[NTFSFS_MAX_VOLUMES][NTFSFS_PATH_MAX];
     const int count = ntfsfs_mount_points(volumes, NTFSFS_MAX_VOLUMES);
     for (int i = 0; i < count; ++i) {
-        const std::string root = std::string{volumes[i]} + "/games";
-        if (Eden::DirectoryExists(root)) roots.emplace_back(root, "NTFS");
+        for (const char* sub : {"/games", "/nx2", "/roms"}) {
+            const std::string root = std::string{volumes[i]} + sub;
+            if (Eden::DirectoryExists(root)) roots.emplace_back(root, "NTFS");
+        }
     }
     std::map<std::string, std::string> found;
     std::vector<std::string> names;
@@ -1011,9 +1015,16 @@ static std::vector<std::string> UsbGames(const std::set<std::string>& taken, std
                 if (stat(path.c_str(), &info) != 0) continue;
                 if (S_ISDIR(info.st_mode)) {
                     struct stat main_info {};
-                    if (stat((path + "/exefs/main").c_str(), &main_info) == 0 && S_ISREG(main_info.st_mode))
-                        add(name + ".dir", path + "/exefs/main", label);
-                    else if (f == 0 && folders.size() < 64)
+                    if (stat((path + "/exefs/main").c_str(), &main_info) == 0 && S_ISREG(main_info.st_mode)) {
+                        std::string key_name = name;
+                        if (f > 0 || key_name == "base" || key_name == "roms") {
+                            std::string parent_name = std::filesystem::path(folders[f]).filename().string();
+                            if (!parent_name.empty() && parent_name != "games" && parent_name != "nx2" && parent_name != "roms") {
+                                key_name = parent_name;
+                            }
+                        }
+                        add(key_name + ".dir", path + "/exefs/main", label);
+                    } else if (f == 0 && folders.size() < 64)
                         folders.push_back(path);
                 } else if (S_ISREG(info.st_mode) && Eden::ValidRomFilename(name) && !IsFolderGame(name)) {
                     add(name, path, label);
@@ -1089,10 +1100,9 @@ std::vector<pe::ui::Game> EdenServices::games() {
             // The cover is replaced in one step: the menu may be loading the old one right now.
             const std::string cover = CoverPath(file);
             const std::string staged = cover + ".new";
-            // A folder has no control data to read (no title, no cover): it keeps its folder's name.
-            const int metadata = IsFolderGame(file) ? 0 : eden_extract_game_metadata(path.c_str(), Eden::AssetsPath("keys").c_str(),
+            const int metadata = eden_extract_game_metadata(path.c_str(), Eden::AssetsPath("keys").c_str(),
                                                             staged.c_str(), title, sizeof(title));
-            if (metadata & EDEN_METADATA_TITLE) {
+            if ((metadata & EDEN_METADATA_TITLE) && title[0] != '\0') {
                 game.name = title;
                 SaveTitle(file, game.name);
             }

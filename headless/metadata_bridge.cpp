@@ -186,23 +186,84 @@ int eden_write_cover_tga(const unsigned char* encoded, size_t size, const char* 
     return 1;
 }
 
+static std::vector<std::string> GetFolderGameCandidateDirs(std::string_view rom_path) {
+    std::vector<std::string> dirs;
+    if (!rom_path.ends_with("/exefs/main")) return dirs;
+    std::filesystem::path main_path(rom_path);
+    std::filesystem::path exefs_dir = main_path.parent_path();
+    dirs.push_back(exefs_dir.string());
+    std::filesystem::path parent_dir = exefs_dir.parent_path();
+    if (!parent_dir.empty()) dirs.push_back(parent_dir.string());
+    std::filesystem::path grandparent_dir = parent_dir.parent_path();
+    if (!grandparent_dir.empty()) dirs.push_back(grandparent_dir.string());
+    return dirs;
+}
+
 uint64_t eden_game_title_id(const char* rom_path) {
     if (!rom_path) return 0;
     Common::FS::SetEdenPath(Common::FS::EdenPath::KeysDir, Eden::AssetsPath("keys"));
-    // A game that is a folder (exefs/ and romfs/), given by its exefs/main: the title ID is in main.npdm, in
-    // the ACI0 block its header points to ("META", ACI0 offset at 0x70; "ACI0", title ID at 0x10 of it).
+    // A game that is a folder (exefs/ and romfs/), given by its exefs/main.
     if (const std::string_view named{rom_path}; named.ends_with("/exefs/main")) {
-        const std::string npdm = std::string{named.substr(0, named.size() - 4)} + "main.npdm";
-        std::unique_ptr<FILE, int (*)(FILE*)> file(std::fopen(npdm.c_str(), "rb"), std::fclose);
-        unsigned char header[0x400]{};
-        const std::size_t size = file ? std::fread(header, 1, sizeof(header), file.get()) : 0;
-        if (size < 0x80 || std::memcmp(header, "META", 4) != 0) return 0;
-        std::uint32_t aci = 0;
-        std::memcpy(&aci, header + 0x70, sizeof(aci));
-        if (aci + 0x18 > size || std::memcmp(header + aci, "ACI0", 4) != 0) return 0;
-        std::uint64_t title = 0;
-        std::memcpy(&title, header + aci + 0x10, sizeof(title));
-        return title;
+        const auto dirs = GetFolderGameCandidateDirs(rom_path);
+        // 1. Try reading main.npdm with full file buffer
+        for (const auto& dir : dirs) {
+            const std::string npdm = dir + "/main.npdm";
+            if (std::FILE* file = std::fopen(npdm.c_str(), "rb")) {
+                std::fseek(file, 0, SEEK_END);
+                long file_size = std::ftell(file);
+                std::fseek(file, 0, SEEK_SET);
+                if (file_size >= 0x80 && file_size <= (1 << 20)) {
+                    std::vector<unsigned char> data(static_cast<size_t>(file_size));
+                    if (std::fread(data.data(), 1, data.size(), file) == data.size() &&
+                        std::memcmp(data.data(), "META", 4) == 0) {
+                        std::uint32_t aci = 0;
+                        std::memcpy(&aci, data.data() + 0x70, sizeof(aci));
+                        if (aci + 0x18 <= data.size() && std::memcmp(data.data() + aci, "ACI0", 4) == 0) {
+                            std::uint64_t title = 0;
+                            std::memcpy(&title, data.data() + aci + 0x10, sizeof(title));
+                            std::fclose(file);
+                            if (title != 0) return title;
+                        }
+                    }
+                }
+                std::fclose(file);
+            }
+        }
+        // 2. Try reading control.nacp
+        for (const auto& dir : dirs) {
+            for (const char* name : {"/control.nacp", "/Control.nacp"}) {
+                const std::string nacp_path = dir + name;
+                if (std::FILE* file = std::fopen(nacp_path.c_str(), "rb")) {
+                    FileSys::RawNACP raw{};
+                    if (std::fread(&raw, 1, sizeof(raw), file) == sizeof(raw)) {
+                        std::fclose(file);
+                        if (raw.save_data_owner_id != 0) return raw.save_data_owner_id;
+                        if (raw.presence_group_id != 0) return raw.presence_group_id;
+                        if (raw.dlc_base_title_id != 0) return raw.dlc_base_title_id;
+                    } else {
+                        std::fclose(file);
+                    }
+                }
+            }
+        }
+        // 3. Fallback: check if directory name has 16-hex or decimal title ID
+        for (const auto& dir : dirs) {
+            std::string folder_name = std::filesystem::path(dir).filename().string();
+            if (folder_name != "exefs" && folder_name != "base" && folder_name != "roms" &&
+                folder_name != "games" && folder_name != "nx2" && !folder_name.empty()) {
+                char* end = nullptr;
+                uint64_t parsed = std::strtoull(folder_name.c_str(), &end, 16);
+                if (end != folder_name.c_str() && *end == '\0' && (parsed >> 32) != 0) {
+                    return parsed;
+                }
+                parsed = std::strtoull(folder_name.c_str(), &end, 10);
+                if (end != folder_name.c_str() && *end == '\0' && parsed != 0) {
+                    return parsed;
+                }
+            }
+        }
+        // If still not found, fallback to synthetic non-zero title ID based on path hash
+        return 0x0100000000000000ull | (static_cast<uint64_t>(std::hash<std::string>{}(rom_path)) & 0xFFFFFFFFFFFFull);
     }
     FileSys::RealVfsFilesystem vfs;
     const auto file = vfs.OpenFile(rom_path, FileSys::OpenMode::Read);
@@ -227,6 +288,104 @@ int eden_extract_game_metadata(const char* rom_path, const char* keys_dir,
     if (!rom_path || !keys_dir || !cover_tga_path || !title || title_capacity == 0) return 0;
     title[0] = '\0';
     Common::FS::SetEdenPath(Common::FS::EdenPath::KeysDir, keys_dir);
+
+    // Folder game extraction
+    if (const std::string_view named{rom_path}; named.ends_with("/exefs/main")) {
+        int result = 0;
+        const auto dirs = GetFolderGameCandidateDirs(rom_path);
+
+        // 1. Try control.nacp
+        for (const auto& dir : dirs) {
+            for (const char* name : {"/control.nacp", "/Control.nacp"}) {
+                const std::string nacp_path = dir + name;
+                if (std::FILE* file = std::fopen(nacp_path.c_str(), "rb")) {
+                    FileSys::RawNACP raw{};
+                    if (std::fread(&raw, 1, sizeof(raw), file) == sizeof(raw)) {
+                        std::fclose(file);
+                        GameLanguages()[rom_path] = static_cast<uint32_t>(raw.supported_languages);
+                        for (std::size_t lang = 0; lang < 16; ++lang) {
+                            const auto& entry = raw.language_entries.language_entries[lang];
+                            std::string candidate_title(entry.application_name.data(),
+                                                        strnlen(entry.application_name.data(), sizeof(entry.application_name)));
+                            while (!candidate_title.empty() && (candidate_title.back() == '\0' || candidate_title.back() == ' '))
+                                candidate_title.pop_back();
+                            if (!candidate_title.empty() && Eden::UsableName(candidate_title.c_str())) {
+                                const std::string plain = Eden::PlainName(candidate_title.c_str());
+                                std::snprintf(title, title_capacity, "%s", plain.c_str());
+                                result |= EDEN_METADATA_TITLE;
+                                break;
+                            }
+                        }
+                    } else {
+                        std::fclose(file);
+                    }
+                    if (result & EDEN_METADATA_TITLE) break;
+                }
+            }
+            if (result & EDEN_METADATA_TITLE) break;
+        }
+
+        // 2. Cover extraction
+        for (const auto& dir : dirs) {
+            // Check icon dat files
+            for (const char* lang : language_names) {
+                const std::string icon_path = dir + "/icon_" + lang + ".dat";
+                if (std::FILE* f = std::fopen(icon_path.c_str(), "rb")) {
+                    std::fseek(f, 0, SEEK_END);
+                    long len = std::ftell(f);
+                    std::fseek(f, 0, SEEK_SET);
+                    if (len > 0 && len < (16 << 20)) {
+                        std::vector<unsigned char> bytes(static_cast<size_t>(len));
+                        if (std::fread(bytes.data(), 1, bytes.size(), f) == bytes.size()) {
+                            std::fclose(f);
+                            if (WriteTgaBytes(bytes.data(), bytes.size(), cover_tga_path, 4096)) {
+                                result |= EDEN_METADATA_COVER;
+                                break;
+                            }
+                        } else std::fclose(f);
+                    } else std::fclose(f);
+                }
+            }
+            if (result & EDEN_METADATA_COVER) break;
+
+            // Check png, jpg, jpeg, bmp
+            for (const char* img_name : {"/icon.png", "/icon.jpg", "/icon.jpeg", "/icon.bmp",
+                                         "/cover.png", "/cover.jpg", "/cover.jpeg", "/cover.bmp"}) {
+                const std::string img_path = dir + img_name;
+                if (std::FILE* f = std::fopen(img_path.c_str(), "rb")) {
+                    std::fseek(f, 0, SEEK_END);
+                    long len = std::ftell(f);
+                    std::fseek(f, 0, SEEK_SET);
+                    if (len > 0 && len < (16 << 20)) {
+                        std::vector<unsigned char> bytes(static_cast<size_t>(len));
+                        if (std::fread(bytes.data(), 1, bytes.size(), f) == bytes.size()) {
+                            std::fclose(f);
+                            if (WriteTgaBytes(bytes.data(), bytes.size(), cover_tga_path, 4096)) {
+                                result |= EDEN_METADATA_COVER;
+                                break;
+                            }
+                        } else std::fclose(f);
+                    } else std::fclose(f);
+                }
+            }
+            if (result & EDEN_METADATA_COVER) break;
+        }
+
+        // If title still empty, fallback to folder name
+        if (!(result & EDEN_METADATA_TITLE) && title[0] == '\0') {
+            for (auto it = dirs.rbegin(); it != dirs.rend(); ++it) {
+                std::string folder_name = std::filesystem::path(*it).filename().string();
+                if (folder_name != "exefs" && folder_name != "base" && folder_name != "roms" &&
+                    folder_name != "games" && folder_name != "nx2" && !folder_name.empty()) {
+                    std::snprintf(title, title_capacity, "%s", folder_name.c_str());
+                    result |= EDEN_METADATA_TITLE;
+                    break;
+                }
+            }
+        }
+        return result;
+    }
+
     FileSys::RealVfsFilesystem vfs;
     const auto file = vfs.OpenFile(rom_path, FileSys::OpenMode::Read);
     if (!file) return 0;
@@ -252,6 +411,23 @@ int eden_extract_game_metadata(const char* rom_path, const char* keys_dir,
 uint32_t eden_game_supported_languages(const char* rom_path, const char* keys_dir) {
     if (!rom_path || !keys_dir) return 0;
     if (const auto known = GameLanguages().find(rom_path); known != GameLanguages().end()) return known->second;
+    if (const std::string_view named{rom_path}; named.ends_with("/exefs/main")) {
+        const auto dirs = GetFolderGameCandidateDirs(rom_path);
+        for (const auto& dir : dirs) {
+            for (const char* name : {"/control.nacp", "/Control.nacp"}) {
+                const std::string nacp_path = dir + name;
+                if (std::FILE* file = std::fopen(nacp_path.c_str(), "rb")) {
+                    FileSys::RawNACP raw{};
+                    if (std::fread(&raw, 1, sizeof(raw), file) == sizeof(raw)) {
+                        std::fclose(file);
+                        return GameLanguages()[rom_path] = static_cast<uint32_t>(raw.supported_languages);
+                    }
+                    std::fclose(file);
+                }
+            }
+        }
+        return 0;
+    }
     try {
         Common::FS::SetEdenPath(Common::FS::EdenPath::KeysDir, keys_dir);
         FileSys::RealVfsFilesystem vfs;

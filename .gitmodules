@@ -1,3 +1,4 @@
 [submodule "Eglantine"]
 	path = Eglantine
-	url = https://github.com/Djihads80/Eglantine
+	url = https://github.com/swizardlv/Eglantine.git
+	branch = nx2
