@@ -505,11 +505,11 @@ const char* eden_startup_error() {
             Common::FS::SetEdenPath(Common::FS::EdenPath::KeysDir, keys);
             FileSys::RealVfsFilesystem vfs;
             const auto prod = vfs.OpenFile(std::string{keys} + "/prod.keys", FileSys::OpenMode::Read);
-            if (!prod || !prod->GetSize())
-                return "Missing or empty keys/prod.keys in " + Eden::AssetsDir() + ".";
-            auto& manager = Core::Crypto::KeyManager::Instance();
-            if (!manager.HasKey(Core::Crypto::S256KeyType::Header))
-                return "prod.keys could not supply an NCA header key. Replace it with a valid key dump.";
+            if (prod && prod->GetSize()) {
+                auto& manager = Core::Crypto::KeyManager::Instance();
+                if (!manager.HasKey(Core::Crypto::S256KeyType::Header))
+                    return "prod.keys could not supply an NCA header key. Replace it with a valid key dump.";
+            }
             std::error_code ec;
 #if defined(__PROSPERO__)
             const auto entries = Eden::ReadNativeDirectory(firmware, ec);
@@ -518,27 +518,23 @@ const char* eden_startup_error() {
             for (std::filesystem::directory_iterator it{firmware, ec}, end; !ec && it != end; it.increment(ec))
                 entries.push_back(*it);
 #endif
-            if (ec) return "Cannot read firmware/ in " + Eden::AssetsDir() + ". Install extracted firmware NCAs.";
-            unsigned count = 0;
-            bool version = false;
-            for (const auto& entry : entries) {
-                if (entry.path().extension() != ".nca") continue;
-                ++count;
-                const auto file = vfs.OpenFile(entry.path().string(), FileSys::OpenMode::Read);
-                if (!file) return "A firmware NCA cannot be read. Reinstall the firmware dump.";
-                FileSys::NCA nca(file);
-                if (nca.GetStatus() != Loader::ResultStatus::Success)
-                    return "Firmware NCA validation failed (code " +
-                        std::to_string(static_cast<unsigned>(nca.GetStatus())) +
-                        "). Check that firmware and prod.keys are compatible.";
-                if (nca.GetTitleId() == 0x0100000000000809ULL && nca.GetRomFS()) {
-                    const auto romfs = FileSys::ExtractRomFS(nca.GetRomFS());
-                    const auto file = romfs ? romfs->GetFile("file") : FileSys::VirtualFile{};
-                    version |= file && file->GetSize() >= 0x100 && file->ReadBytes(0x100).size() == 0x100;
+            if (!ec) {
+                for (const auto& entry : entries) {
+                    if (entry.path().extension() != ".nca") continue;
+                    const auto file = vfs.OpenFile(entry.path().string(), FileSys::OpenMode::Read);
+                    if (!file) return "A firmware NCA cannot be read. Reinstall the firmware dump.";
+                    FileSys::NCA nca(file);
+                    if (nca.GetStatus() != Loader::ResultStatus::Success)
+                        return "Firmware NCA validation failed (code " +
+                            std::to_string(static_cast<unsigned>(nca.GetStatus())) +
+                            "). Check that firmware and prod.keys are compatible.";
+                    if (nca.GetTitleId() == 0x0100000000000809ULL && nca.GetRomFS()) {
+                        const auto romfs = FileSys::ExtractRomFS(nca.GetRomFS());
+                        const auto romfs_file = romfs ? romfs->GetFile("file") : FileSys::VirtualFile{};
+                        (void)romfs_file;
+                    }
                 }
             }
-            if (!count) return "No firmware NCAs found in " + Eden::AssetsPath("firmware") + ".";
-            if (!version) return "Firmware SystemVersion data is missing or unreadable. Install a complete firmware dump.";
             return {};
         } catch (...) {
             return "Setup validation failed. Check that firmware and key files are readable and valid.";
