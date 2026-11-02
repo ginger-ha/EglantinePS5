@@ -85,10 +85,10 @@ std::uintptr_t SlotAddress(SparseRange& range, std::size_t slot) noexcept {
 
 // ---- Blocks: the pool, a reserve for when the pool says no, and shared blocks' references ----
 //
-// The reserve is the guest's headroom in the pool, held as blocks of its own: 512 MiB that a game's
+// The reserve is the guest's headroom in the pool, held as blocks of its own: 256 MiB that a game's
 // writes take when the pool has no block left. On Switch 2 titles (which use ~5 GB guest RAM),
-// reserving 1 GiB leaves too little room for large 160 MiB graphics staging buffers.
-constexpr std::size_t ReserveBlocks = 256;      // 512 MiB (was 512 = 1 GiB)
+// reserving 1 GiB or 512 MiB leaves too little room for large graphics allocations on PS5's 12 GiB pool.
+constexpr std::size_t ReserveBlocks = 128;      // 256 MiB (was 256 = 512 MiB, originally 512 = 1 GiB)
 constexpr std::size_t ReserveAtStart = 16;      // taken as the service starts; the keeper takes the rest
 std::int64_t reserve[ReserveBlocks];
 std::atomic<std::size_t> reserve_count{0};
