@@ -437,6 +437,12 @@ ALLOCATOR_REFUSED = """    VkResult created = CALL;
                          times, int(created), VALUES);
         }
         if (created != VK_SUCCESS) {
+            const std::size_t trimmed = ::Eden::Performance::TrimHeap("graphics allocation refused");
+            if (trimmed > 0) {
+                created = AGAIN;
+            }
+        }
+        if (created != VK_SUCCESS) {
             VmaBudget held[VK_MAX_MEMORY_HEAPS]{};
             vmaGetHeapBudgets(allocator, held);
             unsigned long long blocks = 0, used = 0;
