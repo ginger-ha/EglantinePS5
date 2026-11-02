@@ -298,9 +298,9 @@ inline std::atomic<bool> graphics_memory_short{false};
 // 486 MiB (a texture array of 121 layers, decoded before it is uploaded). With less here the collector
 // let the pool run down to 620 MiB in one block, and that request ended the session.
 inline constexpr std::size_t kShortMemory = std::size_t{1} << 30;
-// The guest's headroom in the pool: 1 GiB that a game's own memory may take at once while the graphics
+// The guest's headroom in the pool: 256 MiB that a game's own memory may take at once while the graphics
 // caches give memory back. The memory service holds it as blocks of its own (src/guest_memory_service.inc).
-inline constexpr std::size_t kGuestReserve = std::size_t{1} << 30;
+inline constexpr std::size_t kGuestReserve = std::size_t{256} << 20;
 // What the caches see of the pool (performance.cpp, RefreshFreeMemory): its largest free block less the part
 // of the guest's headroom the service does not hold yet (all of it when no service holds any), and memory
 // short when that is under kShortMemory or a burst of the game's writes has taken half the headroom, so the
