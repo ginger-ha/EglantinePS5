@@ -1035,13 +1035,25 @@ if(PS5_NATIVE)
         "    if (patched || full_image) {" nso_source "${nso_source}")
     string(REPLACE "    // Load codeset for current process"
         "    // Initialize BSS and page padding directly, including reused guest pages.\n    if (codeset.memory.size() < image_size &&\n        !process.GetMemory().ZeroBlock(load_base + codeset.memory.size(), image_size - codeset.memory.size()))\n        return std::nullopt;\n\n    // Load codeset for current process" nso_source "${nso_source}")
-    set(old_nso_decode [=[        std::vector<u8> decompressed_size(std::ranges::max_element(nso_header.segments, [](auto const& a, auto const& b) {
-            return a.size < b.size;
-        })->size);]=])
+    set(old_nso_decode "        std::vector<u8> decompressed_size(max_uncompressed_segment);")
+    string(FIND "${nso_source}" "${old_nso_decode}" nso_decode_offset)
+    if(nso_decode_offset LESS 0)
+        message(FATAL_ERROR "Pinned NSO decompressed_size buffer allocation changed")
+    endif()
     string(REPLACE "${old_nso_decode}" "" nso_source "${nso_source}")
-    string(REPLACE "            nso_file.Read(compressed_data.data(), nso_header.segments_compressed_size[i], nso_header.segments[i].offset);"
-        "            auto* destination = codeset.memory.data() + module_start + nso_header.segments[i].location;\n            if (!nso_header.IsSegmentCompressed(i)) {\n                if (nso_file.Read(destination, nso_header.segments[i].size, nso_header.segments[i].offset) != nso_header.segments[i].size) return std::nullopt;\n            } else if (nso_file.Read(compressed_data.data(), nso_header.segments_compressed_size[i], nso_header.segments[i].offset) != nso_header.segments_compressed_size[i]) return std::nullopt;"
-        nso_source "${nso_source}")
+    set(old_nso_read [=[            const size_t read_size = nso_header.IsSegmentCompressed(i)
+                                         ? static_cast<size_t>(nso_header.segments_compressed_size[i])
+                                         : static_cast<size_t>(nso_header.segments[i].size);
+            nso_file.Read(compressed_data.data(), read_size, nso_header.segments[i].offset);]=])
+    set(new_nso_read [=[            auto* destination = codeset.memory.data() + module_start + nso_header.segments[i].location;
+            if (!nso_header.IsSegmentCompressed(i)) {
+                if (nso_file.Read(destination, nso_header.segments[i].size, nso_header.segments[i].offset) != nso_header.segments[i].size) return std::nullopt;
+            } else if (nso_file.Read(compressed_data.data(), nso_header.segments_compressed_size[i], nso_header.segments[i].offset) != nso_header.segments_compressed_size[i]) return std::nullopt;]=])
+    string(FIND "${nso_source}" "${old_nso_read}" nso_read_offset)
+    if(nso_read_offset LESS 0)
+        message(FATAL_ERROR "Pinned NSO segment read changed")
+    endif()
+    string(REPLACE "${old_nso_read}" "${new_nso_read}" nso_source "${nso_source}")
     # A segment is decoded where it belongs (read there directly when it is not compressed), and
     # a segment that does not decode ends the load instead of the app.
     set(old_nso_segment [=[            if (nso_header.IsSegmentCompressed(i)) {

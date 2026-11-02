@@ -333,6 +333,9 @@ public:
             DrawHud(text, true);
         }
         Check(eglSwapBuffers(display, surface), "loading swap");
+#ifdef PS5_NATIVE
+        sceSystemServiceHideSplashScreen();
+#endif
         if (loading_frames++ < 4) std::printf("EDEN_LOADING frame=%u scene=%d\n", loading_frames, !loading_failed);
     }
     // idle: the GPU thread has no game commands waiting (hud.h, LoadingPace).

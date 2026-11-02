@@ -1,3 +1,7 @@
+#ifdef PS5_NATIVE
+extern "C" int sceSystemServiceHideSplashScreen(void);
+#endif
+
 // Runs on the existing GPU worker, before the first guest Composite. Reuse its
 // swapchain and composition pass without guest captures or FPS notifications.
 void RendererVulkan::PresentLoading() {
@@ -8,4 +12,9 @@ void RendererVulkan::PresentLoading() {
                               swapchain.GetImageViewFormat(), true);
     scheduler.Flush(*frame->render_ready);
     present_manager.Present(frame);
+    Eden::CountPresentedFrame();
+    scheduler.DispatchWork();
+#ifdef PS5_NATIVE
+    sceSystemServiceHideSplashScreen();
+#endif
 }

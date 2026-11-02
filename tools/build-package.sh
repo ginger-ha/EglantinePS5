@@ -11,6 +11,7 @@ root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$root"
 mode=${1:?usage: tools/build-package.sh release|dev TITLE_ID}
 scratch=$(cat .local/headless-cache)
+bash tools/sync-eden-source.sh "$scratch/source"
 export PS5_PAYLOAD_SDK="$scratch/sdk"
 export EDEN_PS5_VULKAN=ON EDEN_VULKAN_DRIVER=RADV
 case $mode in

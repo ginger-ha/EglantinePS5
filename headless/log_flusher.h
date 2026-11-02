@@ -24,21 +24,33 @@ namespace Eden {
 
 inline void MirrorLogsToMountedUsb() noexcept {
     try {
-        std::string usb_mount;
+        std::vector<std::string> valid_dirs;
         for (int i = 0; i <= 7; ++i) {
             const std::string candidate = "/mnt/usb" + std::to_string(i);
             std::error_code ec;
-            if (std::filesystem::is_directory(candidate, ec)) {
-                usb_mount = candidate;
-                break;
+            if (!std::filesystem::is_directory(candidate, ec)) continue;
+            const bool likely = std::filesystem::is_directory(candidate + "/games", ec) ||
+                                std::filesystem::is_directory(candidate + "/PPSA98515", ec) ||
+                                std::filesystem::is_directory(candidate + "/homebrew", ec) ||
+                                std::filesystem::is_directory(candidate + "/eglantine_logs", ec);
+            const std::string logs_dir = candidate + "/eglantine_logs";
+            std::filesystem::create_directories(logs_dir, ec);
+            if (!ec) {
+                const std::string probe = logs_dir + "/.probe";
+                std::ofstream probe_file(probe, std::ios::trunc);
+                if (probe_file) {
+                    probe_file << "ok";
+                    probe_file.close();
+                    std::filesystem::remove(probe, ec);
+                    if (likely) {
+                        valid_dirs.insert(valid_dirs.begin(), logs_dir);
+                    } else {
+                        valid_dirs.push_back(logs_dir);
+                    }
+                }
             }
         }
-        if (usb_mount.empty()) return;
-
-        const std::string logs_dir = usb_mount + "/eglantine_logs";
-        std::error_code ec;
-        std::filesystem::create_directories(logs_dir, ec);
-        if (ec) return;
+        if (valid_dirs.empty()) return;
 
         auto copy_file_safe = [&](const std::string& src, const std::string& dst) {
             std::error_code err;
@@ -51,11 +63,13 @@ inline void MirrorLogsToMountedUsb() noexcept {
             out.flush();
         };
 
-        copy_file_safe(LogFile("stderr.log"), logs_dir + "/stderr.log");
-        copy_file_safe(LogFile("heap.log"), logs_dir + "/heap.log");
-        copy_file_safe(UserDir() + "/log/eden_log.txt", logs_dir + "/eden_log.txt");
-        copy_file_safe(LogFile("stderr.prev.log"), logs_dir + "/stderr.prev.log");
-        copy_file_safe(LogFile("crash-note.txt"), logs_dir + "/crash-note.txt");
+        for (const auto& logs_dir : valid_dirs) {
+            copy_file_safe(LogFile("stderr.log"), logs_dir + "/stderr.log");
+            copy_file_safe(LogFile("heap.log"), logs_dir + "/heap.log");
+            copy_file_safe(UserDir() + "/log/eden_log.txt", logs_dir + "/eden_log.txt");
+            copy_file_safe(LogFile("stderr.prev.log"), logs_dir + "/stderr.prev.log");
+            copy_file_safe(LogFile("crash-note.txt"), logs_dir + "/crash-note.txt");
+        }
     } catch (...) {}
 }
 
@@ -102,7 +116,6 @@ private:
             }
             std::fflush(stderr);
             std::fflush(stdout);
-            MirrorLogsToMountedUsb();
         }
     }
 

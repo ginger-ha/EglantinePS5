@@ -10,6 +10,7 @@ namespace VideoCore { class RendererBase; }
 namespace Core { class System; }
 namespace Eden {
 void ToggleHud();
+bool LoadingTick(VideoCore::RendererBase& renderer, bool idle);
 class GraphicsWindow final : public Core::Frontend::EmuWindow {
 public:
     explicit GraphicsWindow(bool use_vulkan = false);

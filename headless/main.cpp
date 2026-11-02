@@ -17,6 +17,7 @@
 #include <cerrno>
 #include <cstring>
 #include <sys/stat.h>
+#include <sys/resource.h>
 #endif
 #ifdef EDEN_DEV_VULKAN
 #include "sdk_audit.h"
@@ -271,6 +272,11 @@ int main(int argc, char** argv) {
         // root, which may set its group.
         if (getegid() != getgid() && setegid(getgid()) != 0)
             Eden::Report("filesystem access", "Could not match the effective group; RADV's disk cache stays off");
+        struct rlimit rl{};
+        if (getrlimit(RLIMIT_NOFILE, &rl) == 0) {
+            rl.rlim_cur = std::min<rlim_t>(8192, rl.rlim_max);
+            setrlimit(RLIMIT_NOFILE, &rl);
+        }
         if (Eden::FilesystemAccess()) {
             MigrateSandboxData();
             MoveGameFilesOutOfTheApp();
@@ -1351,6 +1357,9 @@ int main(int argc, char** argv) {
                 Eden::BootTrace::Line("game loaded (status %u)", static_cast<unsigned>(loaded));
                 Eden::Report("loader", "Game loaded; initializing renderer");
                 Eden::Loading::Set(Eden::Loading::Step::graphics);
+                if (system.IsPoweredOn()) {
+                    Eden::LoadingTick(system.Renderer(), true);
+                }
 #ifdef EDEN_PS5_OPENGL
                 // Retain the failure, then release CPU readiness and complete normal
                 // shutdown before reporting it. Unwinding before OnGpuReady can hang.
@@ -1394,6 +1403,9 @@ int main(int argc, char** argv) {
 #endif
                         for (unsigned tick = 1; !stop.stop_requested(); ++tick) {
                             std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                            if (system.IsPoweredOn()) {
+                                Eden::LoadingTick(system.Renderer(), true);
+                            }
                             if (tick % 50 != 0 || stop.stop_requested()) continue;
                             const std::string line = counted
                                 ? fmt::format("Shader cache: {} of {} pipelines built ({} s)",
@@ -1489,6 +1501,9 @@ int main(int argc, char** argv) {
                 }
                 Eden::TakeGuestFault(); // Nothing from an earlier session belongs to this one.
                 Eden::Loading::Set(Eden::Loading::Step::starting);
+                if (system.IsPoweredOn()) {
+                    Eden::LoadingTick(system.Renderer(), true);
+                }
                 std::fprintf(stderr, "[EglantinePS5] Starting guest execution with system.Run()...\n");
                 std::fflush(stderr);
                 Eden::MirrorLogsToMountedUsb();
@@ -1845,6 +1860,7 @@ int main(int argc, char** argv) {
             Eden::Report("session failed", error.what());
             std::fflush(stderr);
             std::fflush(stdout);
+            Eden::MirrorLogsToMountedUsb();
         }
         }
 #endif
