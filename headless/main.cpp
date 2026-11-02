@@ -707,7 +707,9 @@ int main(int argc, char** argv) {
             Common::Log::Filter filter;
             filter.SetClassLevel(Common::Log::Class::Service_FS, Common::Log::Level::Info);
 #if defined(PS5_NATIVE) && !defined(EDEN_DEV_PROFILE) && !defined(EDEN_DEV_ROM_ID)
-            if (Eden::LoadPreferences().detailed_logging) filter.ParseFilterString("*:Debug");
+            if (Eden::LoadPreferences().detailed_logging) {
+                filter.ParseFilterString("*:Debug HW.GPU:Info Service.NVDRV:Info Kernel.SVC:Info");
+            }
 #endif
             Common::Log::SetGlobalFilter(filter);
         }
