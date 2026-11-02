@@ -491,23 +491,21 @@ adapt('src/video_core/vulkan_common/vulkan_memory_allocator.cpp', 'vulkan_memory
                      ci.extent.width, ci.extent.height, ci.extent.depth, ci.arrayLayers, ci.mipLevels, int(ci.format),
                      unsigned(ci.usage), unsigned(ci.flags), int(ci.tiling), int(sparse_result), int(second));
         if (second != VK_SUCCESS) {
-            // Once: which smaller sizes does the driver accept? Each probe is made and destroyed at once.
-            static std::atomic<bool> probed{false};
-            if (!probed.exchange(true)) {
-                for (u32 layers = ci.arrayLayers / 2; layers >= 1; layers /= 2) {
-                    VkImageCreateInfo probe = sparse_ci;
-                    probe.arrayLayers = layers;
-                    VkImage probe_image{};
-                    const VkResult probed_result =
-                        device.GetDispatchLoader().vkCreateImage(*device.GetLogical(), &probe, nullptr, &probe_image);
-                    std::fprintf(stderr, "EDEN_SPARSE_PROBE %u layers: %d\\n", layers, int(probed_result));
-                    if (probed_result == VK_SUCCESS) {
-                        device.GetDispatchLoader().vkDestroyImage(*device.GetLogical(), probe_image, nullptr);
-                    }
-                    if (layers == 1) break;
+            VkImageCreateInfo scaled_sparse = binding_only;
+            while (scaled_sparse.extent.width > 16 || scaled_sparse.extent.height > 16) {
+                scaled_sparse.extent.width = (std::max)(1u, scaled_sparse.extent.width / 2);
+                scaled_sparse.extent.height = (std::max)(1u, scaled_sparse.extent.height / 2);
+                const u32 max_mips = static_cast<u32>(std::floor(std::log2((std::max)(scaled_sparse.extent.width, scaled_sparse.extent.height)))) + 1;
+                scaled_sparse.mipLevels = (std::min)(scaled_sparse.mipLevels, max_mips);
+                if (device.GetDispatchLoader().vkCreateImage(*device.GetLogical(), &scaled_sparse, nullptr, &sparse) == VK_SUCCESS) {
+                    std::fprintf(stderr, "EDEN_SPARSE_IMAGE recovered as %ux%ux%u, %u layers\\n",
+                                 scaled_sparse.extent.width, scaled_sparse.extent.height, scaled_sparse.extent.depth, scaled_sparse.arrayLayers);
+                    break;
                 }
             }
-            return vk::Image{};
+            if (sparse == VK_NULL_HANDLE) {
+                return vk::Image{};
+            }
         }
     }
 """),
@@ -533,17 +531,17 @@ adapt('src/video_core/renderer_vulkan/vk_staging_buffer_pool.cpp', 'vulkan_stagi
      '    };',
      '    const auto is_free = [this, size](const StagingBuffer& entry) {\n'
      '        return !entry.deferred && scheduler.IsFree(entry.tick) &&\n'
-     '               ::Eden::StagingBuffers::Holds(entry.mapped_span.size(), entry.log2_level) >= size;\n'
+     '               ::Eden::StagingBuffers::Holds(entry) >= size;\n'
      '    };'),
     ('    auto const log2_size = Common::Log2Ceil<u32>(u32(size));\n',
      '    auto const log2_size = Common::Log2Ceil<u32>(u32(size));\n'
-     '    const bool exact = ::Eden::StagingBuffers::Exact(size, usage != MemoryUsage::DeviceLocal);\n'
+     '    const bool exact = ::Eden::StagingBuffers::Exact(size);\n'
      '    const VkDeviceSize made = ::Eden::StagingBuffers::Size(size, log2_size, exact);\n'
      '    if (exact) {\n'
      '        // Kept buffers of this power of two too small for the transfer go before it is made.\n'
      '        ::Eden::StagingBuffers::ReleaseFrom(GetCache(usage)[log2_size], [this, size](const StagingBuffer& entry) {\n'
      '            return !entry.deferred && scheduler.IsFree(entry.tick) &&\n'
-     '                   ::Eden::StagingBuffers::Holds(entry.mapped_span.size(), entry.log2_level) < size;\n'
+     '                   ::Eden::StagingBuffers::Holds(entry) < size;\n'
      '        });\n'
      '    }\n'),
     ('        .size = 1ULL << log2_size,\n', '        .size = made,\n'),
@@ -570,6 +568,9 @@ adapt('src/video_core/renderer_vulkan/vk_staging_buffer_pool.cpp', 'vulkan_stagi
      '        std::fprintf(stderr, "EDEN_STAGING_OOM asked=%zu made=%llu released=%zu buffers (%llu MiB)\\n", size,\n'
      '                     static_cast<unsigned long long>(made), released.buffers,\n'
      '                     static_cast<unsigned long long>(released.bytes >> 20));\n'
+     '        if (buffer_ci.size > size) {\n'
+     '            buffer_ci.size = (size + 65535ULL) & ~65535ULL;\n'
+     '        }\n'
      '        buffer = memory_allocator.CreateBuffer(buffer_ci, usage);\n'
      '    }\n'
      '    // A large buffer smaller than the power of two: the 1st, 2nd, 4th, 8th ... in the log.\n'
@@ -583,6 +584,8 @@ adapt('src/video_core/renderer_vulkan/vk_staging_buffer_pool.cpp', 'vulkan_stagi
      '                         static_cast<unsigned long long>((VkDeviceSize{1} << log2_size) >> 20), times);\n'
      '        }\n'
      '    }\n'),
+    ('        .deferred = deferred,\n    });',
+     '        .deferred = deferred,\n        .size = buffer_ci.size,\n    });'),
 ])
 # Development A/B switches for device features (headless/dev_vulkan.h, dev-settings).
 adapt('src/video_core/vulkan_common/vulkan_device.cpp', 'vulkan_device.cpp', [
@@ -916,6 +919,10 @@ for old, new in [
      '            }\n'
      '            SwizzleImage(*gpu_memory, image.gpu_addr, image.info, copies, map.mapped_span, swizzle_data_buffer);'),
     ('(!high_priority_mode && must_download)) {', '(!DirtyEvictions() && must_download)) {'),
+    ('        high_priority_mode = total_used_memory >= expected_memory;\n        aggressive_mode = allow_aggressive && total_used_memory >= critical_memory;',
+     '        const bool memory_short = !::Eden::Performance::KeepDirtyTextures();\n'
+     '        high_priority_mode = (total_used_memory >= expected_memory) || memory_short;\n'
+     '        aggressive_mode = allow_aggressive && ((total_used_memory >= critical_memory) || memory_short);'),
     ('    Configure(false);', '    Configure(false);\n    PrefetchDownloads();'),
     ('        Configure(true);', '        Configure(true);\n        PrefetchDownloads();'),
 ]:

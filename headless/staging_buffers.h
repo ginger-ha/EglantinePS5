@@ -20,13 +20,12 @@
 #include <cstdint>
 
 namespace Eden::StagingBuffers {
-inline constexpr std::uint64_t kExactAbove = std::uint64_t{16} << 20;
-inline constexpr std::uint64_t kStep = std::uint64_t{16} << 20;
+inline constexpr std::uint64_t kExactAbove = std::uint64_t{4} << 20;
+inline constexpr std::uint64_t kStep = std::uint64_t{2} << 20;
 
-// Whether a transfer of `size` bytes gets a buffer of its own size. `mapped`: the CPU writes or
-// reads it (Eden's Upload and Download kinds); the buffers for the GPU alone keep their power of two.
-constexpr bool Exact(std::uint64_t size, bool mapped) noexcept {
-    return mapped && size > kExactAbove;
+// Whether a transfer of `size` bytes gets a buffer of its own size.
+constexpr bool Exact(std::uint64_t size, bool /*mapped*/ = true) noexcept {
+    return size > kExactAbove;
 }
 
 // The size of the buffer made for `size` bytes; `log2` is Eden's Log2Ceil of it.
@@ -34,7 +33,14 @@ constexpr std::uint64_t Size(std::uint64_t size, unsigned log2, bool exact) noex
     return exact ? (size + kStep - 1) / kStep * kStep : std::uint64_t{1} << log2;
 }
 
-// What a kept buffer holds: its mapping's size or, when it is not mapped, Eden's power of two.
+// What a kept buffer holds: its recorded size, its mapping's size, or Eden's power of two.
+template <class Entry>
+constexpr std::uint64_t Holds(const Entry& entry) noexcept {
+    if (entry.size != 0) return entry.size;
+    if (entry.mapped_span.size() != 0) return entry.mapped_span.size();
+    return std::uint64_t{1} << entry.log2_level;
+}
+
 constexpr std::uint64_t Holds(std::uint64_t mapped_bytes, unsigned log2) noexcept {
     return mapped_bytes != 0 ? mapped_bytes : std::uint64_t{1} << log2;
 }
@@ -59,7 +65,7 @@ Released ReleaseFrom(Level& level, Drop&& drop) {
     const auto kept = std::remove_if(entries.begin(), entries.end(), [&](const auto& entry) {
         if (!drop(entry)) return false;
         ++released.buffers;
-        released.bytes += Holds(entry.mapped_span.size(), entry.log2_level);
+        released.bytes += Holds(entry);
         return true;
     });
     entries.erase(kept, entries.end());

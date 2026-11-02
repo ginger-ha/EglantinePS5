@@ -4,3 +4,14 @@ dist/
 results/
 .local/
 __pycache__/
+crash-*
+*.log
+*eden_log.txt
+*boot-trace*.txt
+latest_crash.txt
+main.npdm
+*.dat
+result.tsv
+user_*.txt
+dk_*.txt
+crash-index.txt
