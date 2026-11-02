@@ -527,7 +527,7 @@ adapt('src/video_core/vulkan_common/vulkan_memory_allocator.cpp', 'vulkan_memory
 # 480 MiB free. No Finish() when releasing: a buffer handed out earlier may not have its copy recorded.
 adapt('src/video_core/renderer_vulkan/vk_staging_buffer_pool.cpp', 'vulkan_staging_buffer_pool.cpp', [
     ('#include "video_core/vulkan_common/vulkan_wrapper.h"\n',
-     '#include "video_core/vulkan_common/vulkan_wrapper.h"\n#include <atomic>\n#include <cstdio>\n#include "staging_buffers.h"\n'),
+     '#include "video_core/vulkan_common/vulkan_wrapper.h"\n#include <atomic>\n#include <cstdio>\n#include "staging_buffers.h"\n#include "performance.h"\n'),
     ('    const auto is_free = [this](const StagingBuffer& entry) {\n'
      '        return !entry.deferred && scheduler.IsFree(entry.tick);\n'
      '    };',
@@ -555,8 +555,9 @@ adapt('src/video_core/renderer_vulkan/vk_staging_buffer_pool.cpp', 'vulkan_stagi
      '        if (refused.GetResult() != VK_ERROR_OUT_OF_DEVICE_MEMORY) {\n'
      '            throw;\n'
      '        }\n'
-     '        // Refused: the kept buffers the GPU is done with go, and the buffer is asked for once\n'
-     '        // more. Refused again, the error goes on as before.\n'
+     '        // Refused: sync with the worker and trim heap before letting kept buffers go\n'
+     '        scheduler.WaitWorker();\n'
+     '        ::Eden::Performance::TrimHeap("staging OOM");\n'
      '        const auto idle = [this](const StagingBuffer& entry) {\n'
      '            return !entry.deferred && scheduler.IsFree(entry.tick);\n'
      '        };\n'

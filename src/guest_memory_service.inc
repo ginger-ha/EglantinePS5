@@ -85,16 +85,10 @@ std::uintptr_t SlotAddress(SparseRange& range, std::size_t slot) noexcept {
 
 // ---- Blocks: the pool, a reserve for when the pool says no, and shared blocks' references ----
 //
-// The reserve is the guest's headroom in the pool, held as blocks of its own: 1 GiB that a game's
-// writes take when the pool has no block left. It used to be 32 MiB here, plus 1 GiB that the
-// graphics caches only counted as taken (headless/performance.cpp): that 1 GiB stayed in the pool,
-// where Eden's heap, the driver and the caches themselves could take it, and where 2 MiB blocks
-// could no longer be cut from what was left. Tears of the Kingdom's writes found no block four
-// times with the pool's largest free block at 1 or 2 MiB. Held here, nothing else can take it or
-// cut it up; the caches see the pool as it is, less what is not held yet, and evict as soon as a
-// burst of writes has used half of it (performance.h ViewOfPool). It is topped up every 100 ms
-// (ReserveKeeper) and given back with the guest's memory when the session ends.
-constexpr std::size_t ReserveBlocks = 512;      // 1 GiB
+// The reserve is the guest's headroom in the pool, held as blocks of its own: 512 MiB that a game's
+// writes take when the pool has no block left. On Switch 2 titles (which use ~5 GB guest RAM),
+// reserving 1 GiB leaves too little room for large 160 MiB graphics staging buffers.
+constexpr std::size_t ReserveBlocks = 256;      // 512 MiB (was 512 = 1 GiB)
 constexpr std::size_t ReserveAtStart = 16;      // taken as the service starts; the keeper takes the rest
 std::int64_t reserve[ReserveBlocks];
 std::atomic<std::size_t> reserve_count{0};
