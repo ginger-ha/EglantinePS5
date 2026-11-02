@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "devices.h"
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <numbers>
 #include <stdexcept>
@@ -153,13 +154,14 @@ void Pad::OpenSlot(std::size_t player, int user) {
                     static_cast<unsigned>(handle));
         return;
     }
-    slots[player] = {user, handle, 0, 0};
+    slots[player] = {user, handle, 0, 0, 0};
     // Classic two-motor rumble, and motion reports (on by default; failures only lose the feature).
     const int vibration_mode = scePadSetVibrationMode(handle, ps5::pad::kVibrationModeCompatible);
     const int motion = scePadSetMotionSensorState(handle, true);
-    if (vibration_mode < 0 || motion < 0)
-        LOG_INFO(Input, "EDEN_PAD_FEEDBACK player={} vibration_mode={:#x} motion={:#x}", player + 1,
-                 static_cast<unsigned>(vibration_mode), static_cast<unsigned>(motion));
+    const int tilt = scePadSetTiltCorrectionState(handle, true);
+    if (vibration_mode < 0 || motion < 0 || tilt < 0)
+        LOG_INFO(Input, "EDEN_PAD_FEEDBACK player={} vibration_mode={:#x} motion={:#x} tilt={:#x}", player + 1,
+                 static_cast<unsigned>(vibration_mode), static_cast<unsigned>(motion), static_cast<unsigned>(tilt));
     connected_players |= 1u << player;
     connection_changes |= 1u << player;
     LOG_INFO(Input, "EDEN_PAD_OPEN player={} user={} handle={}", player + 1, user, handle);
@@ -437,14 +439,40 @@ void Pad::Consume(std::size_t player, std::span<const ps5::pad::Data> samples) {
         engine->SetStickPosition(player, 1, right_x, right_y);
         // Motion: acceleration in G and angular velocity in rad/s, mapped to Eden's axes and units
         // the way its SDL driver maps a DualSense.
-        auto& last_motion = slots[player].last_motion_us;
+        auto& last_motion = slot.last_motion_us;
         if (!is_usable(raw)) {
             // Away (disconnected, or input taken by the system): stop, rather than keep turning.
-            if (last_motion) engine->SetMotionAtRest(player);
+            if (last_motion || slot.last_steady_us) engine->SetMotionAtRest(player);
             last_motion = 0;
-        } else if (raw.timestamp_us > last_motion) {
-            const u64 delta = last_motion ? raw.timestamp_us - last_motion : 0;
-            last_motion = raw.timestamp_us;
+            slot.last_steady_us = 0;
+        } else {
+            const auto now_us = static_cast<u64>(
+                std::chrono::duration_cast<std::chrono::microseconds>(
+                    std::chrono::steady_clock::now().time_since_epoch()).count());
+            u64 delta = 0;
+            if (raw.timestamp_us > 0) {
+                if (last_motion > 0 && raw.timestamp_us > last_motion) {
+                    const u64 diff = raw.timestamp_us - last_motion;
+                    if (diff >= 500 && diff <= 50000) {
+                        delta = diff;
+                    } else if (diff >= 500'000 && diff <= 50'000'000) {
+                        delta = diff / 1000;
+                    } else if (diff > 50'000'000 && diff <= 500'000'000) {
+                        delta = diff / 3500;
+                    }
+                }
+                last_motion = raw.timestamp_us;
+            } else {
+                if (slot.last_steady_us > 0 && now_us > slot.last_steady_us) {
+                    delta = now_us - slot.last_steady_us;
+                }
+            }
+            slot.last_steady_us = now_us;
+
+            if (raw.timestamp_us == 0 && (delta < 500 || delta > 50000)) {
+                delta = 4000;
+            }
+
             if (delta > 0 && delta < 1'000'000) {
                 constexpr float turn = 2.0f * std::numbers::pi_v<float>;
                 const auto& a = raw.acceleration;
@@ -460,6 +488,14 @@ void Pad::Consume(std::size_t player, std::span<const ps5::pad::Data> samples) {
                     accel_y = std::exchange(accel_x, -accel_y);
                 }
                 engine->SetMotionState(player, delta, gyro_x, gyro_y, w.y / turn, accel_x, accel_y, -a.y);
+
+                static unsigned motion_log_counter = 0;
+                if (++motion_log_counter % 250 == 1) {
+                    LOG_INFO(Input, "EDEN_PAD_MOTION player={} ts={} delta={} ax={:.2f} ay={:.2f} az={:.2f} gx={:.2f} gy={:.2f} gz={:.2f}",
+                             player + 1, raw.timestamp_us, delta,
+                             raw.acceleration.x, raw.acceleration.y, raw.acceleration.z,
+                             raw.angular_velocity.x, raw.angular_velocity.y, raw.angular_velocity.z);
+                }
             }
         }
     }

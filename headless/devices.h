@@ -99,6 +99,7 @@ private:
         int handle = -1;
         u32 last_buttons = 0;
         u64 last_motion_us = 0;
+        u64 last_steady_us = 0;
         // The touchpad as a game button (the guest's Minus unless mapped otherwise), see Consume.
         bool touch_chord = false;  // this press was part of a shortcut
         bool select_held = false;  // a long press: its button stays down until the release

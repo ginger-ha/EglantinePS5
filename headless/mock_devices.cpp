@@ -105,6 +105,7 @@ int scePadGetHandle(int, int, int) { return -1; }
 int scePadClose(int) { ++state.pad_closes; return 0; }
 int scePadSetVibrationMode(int, int) { return 0; }
 int scePadSetMotionSensorState(int, bool) { return 0; }
+int scePadSetTiltCorrectionState(int, bool) { return 0; }
 int scePadSetVibration(int, const ps5::pad::Vibration* vibration) {
     std::scoped_lock lock(state.mutex);
     state.vibrations.push_back(*vibration);

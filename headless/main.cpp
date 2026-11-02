@@ -1155,6 +1155,7 @@ int main(int argc, char** argv) {
             // Settings > Controls, or the game's own (Library > Game settings > Controls).
             const auto controls = Eden::PreferencesFor(game_title);
             Settings::values.vibration_enabled.SetValue(controls.vibration);
+            Settings::values.motion_enabled.SetValue(true);
             pad->SetMapping(controls.mapping);
             Eden::Report("launch", (std::string("Controls: vibration ") + (controls.vibration ? "on" : "off") +
                                     ", buttons " + (controls.mapping == Eden::kDefaultMapping ? std::string("as usual") :
