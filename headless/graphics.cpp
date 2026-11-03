@@ -52,12 +52,12 @@ double LoadingCalm() {
     return calm;
 }
 std::atomic<bool> hud_enabled{true};
-HudClock vulkan_hud_clock;
+[[maybe_unused]] HudClock vulkan_hud_clock;
 // What the display is actually given: the guest's frames plus the ones frame generation
 // adds (CountPresentedFrame(), hud.h).
-HudClock vulkan_hud_output_clock;
-HudSnapshot vulkan_hud;
-double vulkan_hud_stats_time{}, vulkan_hud_speed{};
+[[maybe_unused]] HudClock vulkan_hud_output_clock;
+[[maybe_unused]] HudSnapshot vulkan_hud;
+[[maybe_unused]] double vulkan_hud_stats_time{}, vulkan_hud_speed{};
 bool vulkan_loading{};
 double vulkan_loading_start{-1};
 unsigned vulkan_loading_frames{};
