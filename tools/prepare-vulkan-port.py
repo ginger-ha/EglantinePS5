@@ -505,8 +505,8 @@ adapt('src/video_core/vulkan_common/vulkan_memory_allocator.h',
      '        mutable std::array<VmaPool, VK_MAX_MEMORY_TYPES> temporary_pools{};'),
 ])
 adapt('src/video_core/vulkan_common/vulkan_memory_allocator.cpp', 'vulkan_memory_allocator.cpp', [
-    ('vk::Image MemoryAllocator::CreateUnbackedImage(const VkImageCreateInfo &ci) const {',
-     (port / 'transient_images.inc').read_text() + '\nvk::Image MemoryAllocator::CreateUnbackedImage(const VkImageCreateInfo &ci) const {'),
+    ('vk::Image MemoryAllocator::CreateUnbackedImage(const VkImageCreateInfo &ci, bool aliased) const {',
+     (port / 'transient_images.inc').read_text() + '\nvk::Image MemoryAllocator::CreateUnbackedImage(const VkImageCreateInfo &ci, bool aliased) const {'),
     ('MemoryAllocator::~MemoryAllocator() = default;',
      'MemoryAllocator::~MemoryAllocator() {\n'
      '    for (auto pool : temporary_pools) if (pool) vmaDestroyPool(allocator, pool);\n}'),
