@@ -13,6 +13,7 @@ execute_process(COMMAND python3 "${PORT_ROOT}/tools/prepare-vulkan-port.py"
     "${PROJECT_SOURCE_DIR}" "${PORT_BUILD_DIR}" COMMAND_ERROR_IS_FATAL ANY)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     "${PORT_ROOT}/tools/prepare-vulkan-port.py"
+    "${EDEN_PORT_DIR}/transient_images.inc"
     "${EDEN_PORT_DIR}/vulkan_hud.vert" "${EDEN_PORT_DIR}/vulkan_hud.frag"
     "${EDEN_PORT_DIR}/vulkan_hud_prepare.inc" "${EDEN_PORT_DIR}/vulkan_hud_draw.inc"
     "${EDEN_PORT_DIR}/vulkan_loading.inc")
@@ -41,6 +42,17 @@ list(APPEND video_sources "${PORT_BUILD_DIR}/vulkan_instance.cpp" "${PORT_BUILD_
 foreach(name vk_fence_manager vk_buffer_cache vk_texture_cache vk_descriptor_buffer vk_multi_range_buffer vk_compute_pass vk_graphics_pipeline vk_compute_pipeline vk_pipeline_cache)
     list(REMOVE_ITEM video_sources renderer_vulkan/${name}.cpp)
     list(APPEND video_sources "${PORT_BUILD_DIR}/${name}_cost.cpp")
+endforeach()
+
+# Invalidate consumers when introducing allocator/scheduler port overrides.
+set_property(SOURCE "${PORT_BUILD_DIR}/video_core.cpp" TARGET_DIRECTORY video_core APPEND PROPERTY OBJECT_DEPENDS
+    "${PORT_BUILD_DIR}/include/video_core/vulkan_common/vulkan_memory_allocator.h")
+foreach(video_source IN LISTS video_sources)
+    if(NOT IS_ABSOLUTE "${video_source}")
+        set(video_source "${PROJECT_SOURCE_DIR}/src/video_core/${video_source}")
+    endif()
+    set_property(SOURCE "${video_source}" TARGET_DIRECTORY video_core APPEND PROPERTY OBJECT_DEPENDS
+        "${PORT_BUILD_DIR}/include/video_core/vulkan_common/vulkan_memory_allocator.h")
 endforeach()
 
 target_include_directories(video_core BEFORE PUBLIC "${PORT_BUILD_DIR}/include")

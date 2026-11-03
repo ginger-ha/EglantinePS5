@@ -493,7 +493,23 @@ def refused(call, detail, values):
             .replace('DETAIL', detail).replace('VALUES', values))
 IMAGE_VALUES = 'ci.extent.width, ci.extent.height, ci.extent.depth, ci.arrayLayers, ci.mipLevels, unsigned(ci.samples), int(ci.format)'
 BUFFER_VALUES = 'static_cast<unsigned long long>(ci.size), unsigned(ci.usage)'
+adapt('src/video_core/vulkan_common/vulkan_memory_allocator.h',
+      'include/video_core/vulkan_common/vulkan_memory_allocator.h', [
+    ('#pragma once', '#pragma once\n#include <array>\n#include <mutex>'),
+    ('        vk::Image CreateImage(const VkImageCreateInfo &ci, bool dedicated = false) const;',
+     '        vk::Image CreateImage(const VkImageCreateInfo &ci, bool dedicated = false) const;\n'
+     '        vk::Image CreateTemporaryImage(const VkImageCreateInfo &ci, bool dedicated = false) const;'),
+    ('        u32 valid_memory_types{~0u};',
+     '        u32 valid_memory_types{~0u};\n'
+     '        mutable std::mutex temporary_pool_mutex;\n'
+     '        mutable std::array<VmaPool, VK_MAX_MEMORY_TYPES> temporary_pools{};'),
+])
 adapt('src/video_core/vulkan_common/vulkan_memory_allocator.cpp', 'vulkan_memory_allocator.cpp', [
+    ('vk::Image MemoryAllocator::CreateUnbackedImage(const VkImageCreateInfo &ci) const {',
+     (port / 'transient_images.inc').read_text() + '\nvk::Image MemoryAllocator::CreateUnbackedImage(const VkImageCreateInfo &ci) const {'),
+    ('MemoryAllocator::~MemoryAllocator() = default;',
+     'MemoryAllocator::~MemoryAllocator() {\n'
+     '    for (auto pool : temporary_pools) if (pool) vmaDestroyPool(allocator, pool);\n}'),
     ('#include "video_core/vulkan_common/vulkan_memory_allocator.h"\n',
      '#include "video_core/vulkan_common/vulkan_memory_allocator.h"\n#include <atomic>\n#include <cstddef>\n#include <cstdio>\n#include "performance.h"\nnamespace Common { void GuestMemoryUsage(std::size_t* span, std::size_t* held) noexcept; }\nextern "C" std::size_t eden_heap_committed(void);\n'),
     # What an image was that the allocator could not make at all, for stderr.log.
@@ -1241,6 +1257,18 @@ probes = {
     # With custom border colours off (the console default), report which clamp-to-border
     # samplers ask for a colour the three standard ones cannot give exactly.
     'vk_texture_cache': [
+        ('        .image = memory_allocator.CreateImage(VkImageCreateInfo{\n            .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,',
+         '        .image = memory_allocator.CreateTemporaryImage(VkImageCreateInfo{\n            .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,'),
+        ('    pending_transcodes.push_back(std::move(pending));\n',
+         '    pending_transcodes.push_back(std::move(pending));\n'
+         '    const auto memory_short = ::Eden::Performance::graphics_memory_probe.load(std::memory_order_relaxed);\n'
+         '    if (memory_short && memory_short()) {\n'
+         '        scheduler.Finish();\n'
+         '        while (!pending_transcodes.empty() && scheduler.IsFree(pending_transcodes.front().tick)) {\n'
+         '            pending_transcodes.pop_front();\n'
+         '        }\n'
+         '        staging_buffer_pool.TickFrame();\n'
+         '    }\n'),
         ('#include <algorithm>', '#include <algorithm>\n#include <cstdio>\n#include "dev_vulkan.h"\n#include "diagnostics.h"'),
         ('    has_custom_border_colors = samples_border && device.IsCustomBorderColorUsable();',
          '    if (::Eden::DevVulkan::trace_pipelines && samples_border) {\n'

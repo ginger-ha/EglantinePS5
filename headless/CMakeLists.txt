@@ -129,6 +129,16 @@ string(REPLACE "    to.impl->previous_fiber = weak_from.lock();"
     "    to.impl->previous_fiber = weak_from.lock();\n    ASSERT(to.impl->previous_fiber);\n    weak_from.reset();" fiber_source "${fiber_source}")
 string(REPLACE "    // \"from\" might no longer be valid if the thread was killed\n    if (auto from = weak_from.lock()) {"
     "    if (auto* from = static_cast<Fiber*>(transfer.data)) {" fiber_source "${fiber_source}")
+if(PS5_NATIVE)
+# Native fibers keep their 2MiB usable stack, but reserve it in the CPU flexible pool.
+# ThreadToFiber needs only context bookkeeping and allocates no unused private stack.
+string(REPLACE "    std::array<u8, DEFAULT_STACK_SIZE> stack;"
+    "    ::Eden::FiberStack stack;" fiber_source "${fiber_source}")
+string(REPLACE "    impl->stack_limit = impl->stack.data();"
+    "    impl->stack.Allocate(DEFAULT_STACK_SIZE);\n    impl->stack_limit = impl->stack.data();"
+    fiber_source "${fiber_source}")
+string(PREPEND fiber_source "#include \"${EDEN_PORT_DIR}/fiber_stack.h\"\n")
+endif()
 write_derived("${PORT_BUILD_DIR}/fiber.cpp" "${fiber_source}")
 get_target_property(common_sources common SOURCES)
 list(REMOVE_ITEM common_sources fiber.cpp)
@@ -2283,6 +2293,20 @@ list(APPEND common_sources "${PORT_BUILD_DIR}/multi_level_page_table.cpp")
     # The older SDK omits DCCP's IP protocol name (wire value 33, also used by
     # Service::Sockets::Protocol). socket() still decides runtime support.
     get_target_property(core_sources core SOURCES)
+    # Loose games can open thousands of files. Extracted RomFS enumerates every directory twice.
+    # Avoid constructing a filesystem::directory_entry (lstat) then querying status and size again.
+    # Use getdents type information and one followed stat for each file size.
+    file(READ "${PROJECT_SOURCE_DIR}/src/core/file_sys/vfs/vfs_real.cpp" vfs_real_source)
+    eden_patch(vfs_real_source
+        "std::vector<VirtualFile> RealVfsDirectory::GetFiles() const {\n    return IterateEntries<RealVfsFile, VfsFile>();\n}"
+        "std::vector<VirtualFile> RealVfsDirectory::GetFiles() const {\n    if (perms == OpenMode::AllowAppend) return {};\n    std::error_code error;\n    const auto entries = Eden::ReadNativeDirectoryMetadata(path, false, error);\n    if (error) { LOG_ERROR(Common_Filesystem, \"Directory enumeration failed: {}: {}\", path, error.message()); return {}; }\n    std::vector<VirtualFile> out;\n    out.reserve(entries.size());\n    for (const auto& entry : entries)\n        out.push_back(base.OpenFileFromEntry(FS::PathToUTF8String(entry.path), entry.size, path, perms));\n    return out;\n}")
+    eden_patch(vfs_real_source
+        "std::vector<VirtualDir> RealVfsDirectory::GetSubdirectories() const {\n    return IterateEntries<RealVfsDirectory, VfsDirectory>();\n}"
+        "std::vector<VirtualDir> RealVfsDirectory::GetSubdirectories() const {\n    if (perms == OpenMode::AllowAppend) return {};\n    std::error_code error;\n    const auto entries = Eden::ReadNativeDirectoryMetadata(path, true, error);\n    if (error) { LOG_ERROR(Common_Filesystem, \"Directory enumeration failed: {}: {}\", path, error.message()); return {}; }\n    std::vector<VirtualDir> out;\n    out.reserve(entries.size());\n    for (const auto& entry : entries)\n        out.push_back(base.OpenDirectory(FS::PathToUTF8String(entry.path), perms));\n    return out;\n}")
+    string(PREPEND vfs_real_source "#include \"${EDEN_PORT_DIR}/native_directory_metadata.h\"\n")
+    write_derived("${PORT_BUILD_DIR}/vfs_real.cpp" "${vfs_real_source}")
+    list(REMOVE_ITEM core_sources file_sys/vfs/vfs_real.cpp)
+    list(APPEND core_sources "${PORT_BUILD_DIR}/vfs_real.cpp")
     # Keep immutable firmware outside the small writable title-data quota.
     file(READ "${PROJECT_SOURCE_DIR}/src/core/file_sys/bis_factory.h" bis_header)
     string(REPLACE "VirtualDir dump_root);" "VirtualDir dump_root, VirtualDir firmware_root = {});" bis_header "${bis_header}")
