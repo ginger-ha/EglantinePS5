@@ -1086,7 +1086,7 @@ std::vector<pe::ui::Game> EdenServices::games() {
         std::string format = file.substr(dot + 1);
         std::transform(format.begin(), format.end(), format.begin(),
                        [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
-        if (format != "NSP" && format != "XCI" && format != "DIR") continue;
+        if (format != "NSP" && format != "XCI" && format != "NUP" && format != "DIR") continue;
         const std::string path = RomPath(file);
         struct stat info {};
         if (stat(path.c_str(), &info) != 0 || !S_ISREG(info.st_mode)) continue;
