@@ -535,8 +535,13 @@ void Launcher::draw_library(Canvas &c)
         std::string value;
         Color color;
     };
+    char title_id_buf[32]{"-"};
+    if (game != nullptr && game->title_id != 0) {
+        std::snprintf(title_id_buf, sizeof(title_id_buf), "%016llX", static_cast<unsigned long long>(game->title_id));
+    }
     Field fields[] = {
         {tr("FORMAT"), game != nullptr ? game->format : "-", theme::kValue},
+        {tr("TITLE ID"), title_id_buf, theme::kValue},
         {tr("SIZE"), game != nullptr ? game->size : "-", theme::kValue},
         {tr("ADD-ONS"),
          game != nullptr ? addons_line(game->addons, game->mods, game->mods_on) : "-",
@@ -553,21 +558,21 @@ void Launcher::draw_library(Canvas &c)
         Color tone = theme::kValue;
         const std::string state = remote_state(*game, &tone);
         const bool coming = download_of(game->key) != nullptr;
-        fields[2] = {tr("STATE"), coming ? state : std::string{tr("Not on the console")}, coming ? tone : theme::kValue};
+        fields[3] = {tr("STATE"), coming ? state : std::string{tr("Not on the console")}, coming ? tone : theme::kValue};
         std::string sources;
         for (const std::string &name : game->sources)
             sources += (sources.empty() ? "" : ", ") + name;
-        fields[3] = {game->sources.size() == 1 ? tr("SOURCE") : tr("SOURCES"), sources, theme::kValue};
+        fields[4] = {game->sources.size() == 1 ? tr("SOURCE") : tr("SOURCES"), sources, theme::kValue};
     }
-    for (int i = 0; i < 4; ++i)
+    for (int i = 0; i < 5; ++i)
     {
-        const float line = baseline(384.0f + 42.0f * static_cast<float>(i), 30.0f, theme::kSmall);
+        const float line = baseline(368.0f + 36.0f * static_cast<float>(i), 26.0f, theme::kSmall);
         // The name keeps its size up to 200 wide; the value has the rest of the line.
         const float label =
             text_shrink(c, fields[i].label, 1336.0f, line, theme::kSmall, theme::kLabel, 200.0f);
         const float room = 440.0f - label - 16.0f;
         // What a game comes with is said briefly where the whole line does not fit.
-        if (i == 2 && game != nullptr && !remote && text_width(c, fields[i].value, theme::kSmall) > room)
+        if (i == 3 && game != nullptr && !remote && text_width(c, fields[i].value, theme::kSmall) > room)
             fields[i].value = addons_line(game->addons_short, game->mods, game->mods_on, true);
         text_shrink(c, fields[i].value, 1776.0f, line, theme::kSmall, fields[i].color, room,
                     Align::right);

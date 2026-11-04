@@ -20,6 +20,7 @@
 #include <string_view>
 #include <set>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 // Eden builds stb_image for JPEG only (src/common/stb.h), the format of a game's own icon. A cover
@@ -188,50 +189,75 @@ int eden_write_cover_tga(const unsigned char* encoded, size_t size, const char* 
 
 static std::vector<std::string> GetFolderGameCandidateDirs(std::string_view rom_path) {
     std::vector<std::string> dirs;
-    if (!rom_path.ends_with("/exefs/main")) return dirs;
-    std::filesystem::path main_path(rom_path);
-    std::filesystem::path exefs_dir = main_path.parent_path();
-    dirs.push_back(exefs_dir.string());
-    std::filesystem::path parent_dir = exefs_dir.parent_path();
-    if (!parent_dir.empty()) dirs.push_back(parent_dir.string());
-    std::filesystem::path grandparent_dir = parent_dir.parent_path();
-    if (!grandparent_dir.empty()) dirs.push_back(grandparent_dir.string());
+    if (rom_path.empty()) return dirs;
+
+    std::filesystem::path p(rom_path);
+    if (p.filename() == "main" || p.filename() == "main.npdm" || p.filename() == "Main.npdm") {
+        p = p.parent_path();
+    } else if (p.filename().string().ends_with(".dir")) {
+        p = p.parent_path();
+    }
+
+    std::filesystem::path cur = p;
+    for (int depth = 0; depth < 5 && !cur.empty(); ++depth) {
+        std::string s = cur.string();
+        if (std::find(dirs.begin(), dirs.end(), s) == dirs.end()) {
+            dirs.push_back(s);
+            dirs.push_back((cur / "control").string());
+            dirs.push_back((cur / "Control").string());
+        }
+        std::string fn = cur.filename().string();
+        if (fn == "games" || fn == "nx2" || fn == "roms" || fn == "mnt" || fn == "usb1" || fn == "usb0") break;
+        cur = cur.parent_path();
+    }
+
+    for (const char* common : {
+        "/mnt/usb0/games/covers", "/mnt/usb1/games/covers",
+        "/mnt/usb0/covers", "/mnt/usb1/covers",
+        "/data/eglantineps5/covers"
+    }) {
+        dirs.emplace_back(common);
+    }
     return dirs;
 }
 
 uint64_t eden_game_title_id(const char* rom_path) {
     if (!rom_path) return 0;
     Common::FS::SetEdenPath(Common::FS::EdenPath::KeysDir, Eden::AssetsPath("keys"));
-    // A game that is a folder (exefs/ and romfs/), given by its exefs/main.
-    if (const std::string_view named{rom_path}; named.ends_with("/exefs/main")) {
+    const std::string_view named{rom_path};
+    const bool is_folder = named.ends_with("/exefs/main") || named.ends_with(".dir") ||
+                           (!named.ends_with(".nsp") && !named.ends_with(".xci"));
+    if (is_folder) {
         const auto dirs = GetFolderGameCandidateDirs(rom_path);
         // 1. Try reading main.npdm with full file buffer
         for (const auto& dir : dirs) {
-            const std::string npdm = dir + "/main.npdm";
-            if (std::FILE* file = std::fopen(npdm.c_str(), "rb")) {
-                std::fseek(file, 0, SEEK_END);
-                long file_size = std::ftell(file);
-                std::fseek(file, 0, SEEK_SET);
-                if (file_size >= 0x80 && file_size <= (1 << 20)) {
-                    std::vector<unsigned char> data(static_cast<size_t>(file_size));
-                    if (std::fread(data.data(), 1, data.size(), file) == data.size() &&
-                        std::memcmp(data.data(), "META", 4) == 0) {
-                        std::uint32_t aci = 0;
-                        std::memcpy(&aci, data.data() + 0x70, sizeof(aci));
-                        if (aci + 0x18 <= data.size() && std::memcmp(data.data() + aci, "ACI0", 4) == 0) {
-                            std::uint64_t title = 0;
-                            std::memcpy(&title, data.data() + aci + 0x10, sizeof(title));
-                            std::fclose(file);
-                            if (title != 0) return title;
+            for (const char* npdm_name : {"/main.npdm", "/Main.npdm", "/exefs/main.npdm", "/base/exefs/main.npdm"}) {
+                const std::string npdm = dir + npdm_name;
+                if (std::FILE* file = std::fopen(npdm.c_str(), "rb")) {
+                    std::fseek(file, 0, SEEK_END);
+                    long file_size = std::ftell(file);
+                    std::fseek(file, 0, SEEK_SET);
+                    if (file_size >= 0x80 && file_size <= (1 << 20)) {
+                        std::vector<unsigned char> data(static_cast<size_t>(file_size));
+                        if (std::fread(data.data(), 1, data.size(), file) == data.size() &&
+                            std::memcmp(data.data(), "META", 4) == 0) {
+                            std::uint32_t aci = 0;
+                            std::memcpy(&aci, data.data() + 0x70, sizeof(aci));
+                            if (aci + 0x18 <= data.size() && std::memcmp(data.data() + aci, "ACI0", 4) == 0) {
+                                std::uint64_t title = 0;
+                                std::memcpy(&title, data.data() + aci + 0x10, sizeof(title));
+                                std::fclose(file);
+                                if (title != 0) return title;
+                            }
                         }
                     }
+                    std::fclose(file);
                 }
-                std::fclose(file);
             }
         }
         // 2. Try reading control.nacp
         for (const auto& dir : dirs) {
-            for (const char* name : {"/control.nacp", "/Control.nacp"}) {
+            for (const char* name : {"/control.nacp", "/Control.nacp", "/control/control.nacp"}) {
                 const std::string nacp_path = dir + name;
                 if (std::FILE* file = std::fopen(nacp_path.c_str(), "rb")) {
                     FileSys::RawNACP raw{};
@@ -250,7 +276,8 @@ uint64_t eden_game_title_id(const char* rom_path) {
         for (const auto& dir : dirs) {
             std::string folder_name = std::filesystem::path(dir).filename().string();
             if (folder_name != "exefs" && folder_name != "base" && folder_name != "roms" &&
-                folder_name != "games" && folder_name != "nx2" && !folder_name.empty()) {
+                folder_name != "games" && folder_name != "nx2" && folder_name != "control" &&
+                folder_name != "covers" && !folder_name.empty()) {
                 char* end = nullptr;
                 uint64_t parsed = std::strtoull(folder_name.c_str(), &end, 16);
                 if (end != folder_name.c_str() && *end == '\0' && (parsed >> 32) != 0) {
@@ -289,14 +316,18 @@ int eden_extract_game_metadata(const char* rom_path, const char* keys_dir,
     title[0] = '\0';
     Common::FS::SetEdenPath(Common::FS::EdenPath::KeysDir, keys_dir);
 
+    const std::string_view named{rom_path};
+    const bool is_folder = named.ends_with("/exefs/main") || named.ends_with(".dir") ||
+                           (!named.ends_with(".nsp") && !named.ends_with(".xci"));
+
     // Folder game extraction
-    if (const std::string_view named{rom_path}; named.ends_with("/exefs/main")) {
+    if (is_folder) {
         int result = 0;
         const auto dirs = GetFolderGameCandidateDirs(rom_path);
 
         // 1. Try control.nacp
         for (const auto& dir : dirs) {
-            for (const char* name : {"/control.nacp", "/Control.nacp"}) {
+            for (const char* name : {"/control.nacp", "/Control.nacp", "/control/control.nacp"}) {
                 const std::string nacp_path = dir + name;
                 if (std::FILE* file = std::fopen(nacp_path.c_str(), "rb")) {
                     FileSys::RawNACP raw{};
@@ -325,6 +356,14 @@ int eden_extract_game_metadata(const char* rom_path, const char* keys_dir,
             if (result & EDEN_METADATA_TITLE) break;
         }
 
+        const uint64_t title_id = eden_game_title_id(rom_path);
+        char title_id_hex_upper[32]{};
+        char title_id_hex_lower[32]{};
+        if (title_id != 0) {
+            std::snprintf(title_id_hex_upper, sizeof(title_id_hex_upper), "%016llX", static_cast<unsigned long long>(title_id));
+            std::snprintf(title_id_hex_lower, sizeof(title_id_hex_lower), "%016llx", static_cast<unsigned long long>(title_id));
+        }
+
         // 2. Cover extraction
         for (const auto& dir : dirs) {
             // Check icon dat files
@@ -348,9 +387,21 @@ int eden_extract_game_metadata(const char* rom_path, const char* keys_dir,
             }
             if (result & EDEN_METADATA_COVER) break;
 
-            // Check png, jpg, jpeg, bmp
-            for (const char* img_name : {"/icon.png", "/icon.jpg", "/icon.jpeg", "/icon.bmp",
-                                         "/cover.png", "/cover.jpg", "/cover.jpeg", "/cover.bmp"}) {
+            std::vector<std::string> image_candidates = {
+                "/cover.png", "/cover.jpg", "/cover.jpeg", "/cover.bmp",
+                "/Cover.png", "/Cover.jpg", "/Cover.jpeg",
+                "/icon.png", "/icon.jpg", "/icon.jpeg", "/icon.bmp",
+                "/Icon.png", "/Icon.jpg", "/Icon.jpeg"
+            };
+            if (title_id != 0) {
+                image_candidates.push_back(std::string("/") + title_id_hex_upper + ".png");
+                image_candidates.push_back(std::string("/") + title_id_hex_upper + ".jpg");
+                image_candidates.push_back(std::string("/") + title_id_hex_upper + ".jpeg");
+                image_candidates.push_back(std::string("/") + title_id_hex_lower + ".png");
+                image_candidates.push_back(std::string("/") + title_id_hex_lower + ".jpg");
+                image_candidates.push_back(std::string("/") + title_id_hex_lower + ".jpeg");
+            }
+            for (const auto& img_name : image_candidates) {
                 const std::string img_path = dir + img_name;
                 if (std::FILE* f = std::fopen(img_path.c_str(), "rb")) {
                     std::fseek(f, 0, SEEK_END);
@@ -371,12 +422,26 @@ int eden_extract_game_metadata(const char* rom_path, const char* keys_dir,
             if (result & EDEN_METADATA_COVER) break;
         }
 
+        // 3. Known Switch 2 Title ID to friendly game name
+        if (!(result & EDEN_METADATA_TITLE) || title[0] == '\0') {
+            static const std::unordered_map<uint64_t, const char*> kKnownTitles = {
+                {0x040074a01bf12000ull, "Donkey Kong Bananza"},
+                {0x0400380020056000ull, "Splatoon Raiders"},
+                {0x0400c3f00006e000ull, "Mario Kart World"},
+            };
+            if (const auto it = kKnownTitles.find(title_id); it != kKnownTitles.end()) {
+                std::snprintf(title, title_capacity, "%s", it->second);
+                result |= EDEN_METADATA_TITLE;
+            }
+        }
+
         // If title still empty, fallback to folder name
         if (!(result & EDEN_METADATA_TITLE) && title[0] == '\0') {
             for (auto it = dirs.rbegin(); it != dirs.rend(); ++it) {
                 std::string folder_name = std::filesystem::path(*it).filename().string();
                 if (folder_name != "exefs" && folder_name != "base" && folder_name != "roms" &&
-                    folder_name != "games" && folder_name != "nx2" && !folder_name.empty()) {
+                    folder_name != "games" && folder_name != "nx2" && folder_name != "control" &&
+                    folder_name != "covers" && !folder_name.empty()) {
                     std::snprintf(title, title_capacity, "%s", folder_name.c_str());
                     result |= EDEN_METADATA_TITLE;
                     break;

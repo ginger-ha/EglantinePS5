@@ -725,6 +725,10 @@ msgstr "适用于所有手柄。每个游戏也可有自己的映射。"
 msgid "FORMAT"
 msgstr "格式"
 
+#: pe/ui/library.cpp
+msgid "TITLE ID"
+msgstr "游戏 ID"
+
 #: pe/ui/game_options.cpp, pe/ui/settings.cpp
 msgid "FPS overlay"
 msgstr "帧率显示"

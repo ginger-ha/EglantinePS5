@@ -1345,7 +1345,17 @@ int main(int argc, char** argv) {
                 Eden::MirrorLogsToMountedUsb();
 #ifdef PS5_NATIVE
                 if (game) {
-                    const auto filename = std::filesystem::path(guest).filename().string();
+                    std::string filename = std::filesystem::path(guest).filename().string();
+                    if (filename == "main" && std::string_view(guest).ends_with("/exefs/main")) {
+                        std::filesystem::path gp = std::filesystem::path(guest).parent_path().parent_path();
+                        std::string folder_name = gp.filename().string();
+                        if (folder_name == "base" || folder_name == "roms") {
+                            folder_name = gp.parent_path().filename().string();
+                        }
+                        if (!folder_name.empty() && folder_name != "games" && folder_name != "nx2" && folder_name != "roms") {
+                            filename = folder_name + ".dir";
+                        }
+                    }
                     const bool saved_last = Eden::SaveLastGame(filename);
                     const bool saved_recent = Eden::SaveRecentGame(filename);
                     if (!saved_last || !saved_recent)
