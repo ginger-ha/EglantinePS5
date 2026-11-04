@@ -727,9 +727,9 @@ std::atomic<std::size_t> committed_split{0}; // ranges that took more than one b
 // memory was ever exhausted (failures > 0). (Portablelle 704b3be1b, 2026-11-04)
 // Defined at Common:: scope (NOT in the anonymous namespace) so it has external
 // linkage and the crash reporter can link against it.
-extern "C" bool eden_guest_memory_oom(std::uint64_t* held, std::uint64_t* failures,
-                                      std::uint64_t* reserve_used, std::uint64_t* promotions,
-                                      std::uint64_t* faults) noexcept {
+bool eden_guest_memory_oom(std::uint64_t* held, std::uint64_t* failures,
+                           std::uint64_t* reserve_used, std::uint64_t* promotions,
+                           std::uint64_t* faults) noexcept {
     const auto count = counters.failures.load(std::memory_order_acquire);
     if (count == 0) return false;
     *held = guest_committed.load(std::memory_order_relaxed);

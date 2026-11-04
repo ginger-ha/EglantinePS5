@@ -288,13 +288,16 @@ void PutRegister(const char* before, const char* name, std::uint64_t value) noex
     report.Hex(value, 16);
 }
 
-extern "C" bool eden_guest_memory_oom(std::uint64_t*, std::uint64_t*, std::uint64_t*, std::uint64_t*, std::uint64_t*) noexcept;
+namespace Common {
+bool eden_guest_memory_oom(std::uint64_t*, std::uint64_t*, std::uint64_t*, std::uint64_t*,
+                           std::uint64_t*) noexcept;
+}
 
 // Guest memory exhaustion in the crash report (Portablelle 704b3be1b, 2026-11-04).
 // Only atomics and bounded buffer formatting; never touch stdio in a fault.
 void PutGuestMemoryOom() noexcept {
     std::uint64_t held = 0, failures = 0, reserve_used = 0, promotions = 0, faults = 0;
-    if (!eden_guest_memory_oom(&held, &failures, &reserve_used, &promotions, &faults)) return;
+    if (!Common::eden_guest_memory_oom(&held, &failures, &reserve_used, &promotions, &faults)) return;
     auto& t = report;
     t.Put("\nreason: game memory exhausted\nEDEN_CRAM held ");
     t.Dec(held >> 20);
