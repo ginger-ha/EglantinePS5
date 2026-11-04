@@ -429,7 +429,6 @@ extern "C" std::uintptr_t eden_guest_write_refused(unsigned* why, unsigned* stat
     return address;
 }
 
-
 #ifdef PS5_NATIVE
 extern "C" const char __eden_text_start[] __attribute__((weak));
 extern "C" const char __eden_text_end[] __attribute__((weak));
