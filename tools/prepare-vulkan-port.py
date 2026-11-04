@@ -675,7 +675,13 @@ adapt('src/video_core/vulkan_common/vulkan_device.cpp', 'vulkan_device.cpp', [
      '                                 ? static_cast<double>(6400_MiB) / static_cast<double>(graphics_capacity)\n'
      '                                 : 1.0;\n'
      '        const u64 free_bytes = static_cast<u64>(static_cast<double>(free_memory()) * scale);\n'
-     '        return device_access_memory > free_bytes ? device_access_memory - free_bytes : 0;\n'
+     '        u64 used = device_access_memory > free_bytes ? device_access_memory - free_bytes : 0;\n'
+     '        // PS5 driver counts each VMA allocation twice (VRAM + visible VRAM): report\n'
+     '        // driver-visible usage so the texture/buffer caches size themselves against\n'
+     '        // what the driver actually sees. Without this the caches hold ~4 GiB thinking\n'
+     '        // they are fine while the driver sees ~8 GiB and refuses new allocations.\n'
+     '        used = std::min(device_access_memory, used * 2);\n'
+     '        return used;\n'
      '    }\n'),
     ('    extensions.descriptor_buffer = features.descriptor_buffer.descriptorBuffer;',
      '    extensions.descriptor_buffer = features.descriptor_buffer.descriptorBuffer &&\n'
