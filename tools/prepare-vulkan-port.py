@@ -556,16 +556,16 @@ adapt('src/video_core/vulkan_common/vulkan_memory_allocator.cpp', 'vulkan_memory
     }
 """),
     ('    vk::Check(vmaCreateBuffer(allocator, &ci, &alloc_ci, &handle, &allocation, &alloc_info));\n',
-     '    if (ci.size >= (32ull << 20))\\n'
-     '        std::fprintf(stderr, "EDEN_BIG_BUFFER %llu MiB, usage 0x%x\\n",\\n'
-     '                     static_cast<unsigned long long>(ci.size >> 20), unsigned(ci.usage));\\n' +
+     '    if (ci.size >= (32ull << 20))\n'
+     '        std::fprintf(stderr, "EDEN_BIG_BUFFER %llu MiB, usage 0x%x\n",\n'
+     '                     static_cast<unsigned long long>(ci.size >> 20), unsigned(ci.usage));\n' +
           refused('vmaCreateBuffer(allocator, &ci, &alloc_ci, &handle, &allocation, &alloc_info)',
              'buffer of %llu bytes, usage 0x%x', BUFFER_VALUES)),
     ('    vk::Check(vmaCreateBufferWithAlignment(allocator, &ci, &alloc_ci, min_alignment, &handle,\n'
      '                                           &allocation, &alloc_info));\n',
-     '    if (ci.size >= (32ull << 20))\\n'
-     '        std::fprintf(stderr, "EDEN_BIG_BUFFER %llu MiB, usage 0x%x\\n",\\n'
-     '                     static_cast<unsigned long long>(ci.size >> 20), unsigned(ci.usage));\\n' +
+     '    if (ci.size >= (32ull << 20))\n'
+     '        std::fprintf(stderr, "EDEN_BIG_BUFFER %llu MiB, usage 0x%x\n",\n'
+     '                     static_cast<unsigned long long>(ci.size >> 20), unsigned(ci.usage));\n' +
           refused('vmaCreateBufferWithAlignment(allocator, &ci, &alloc_ci, min_alignment, &handle,\n'
              '                                           &allocation, &alloc_info)',
              'buffer of %llu bytes, usage 0x%x', BUFFER_VALUES)),
