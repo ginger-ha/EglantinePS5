@@ -723,6 +723,23 @@ bool RecordCommitted(std::uintptr_t address, std::size_t size, std::int64_t phys
 std::atomic<std::size_t> committed_split{0}; // ranges that took more than one block
 } // namespace
 
+// Lock-free, best-effort snapshot for the crash reporter: true if the guest's
+// memory was ever exhausted (failures > 0). (Portablelle 704b3be1b, 2026-11-04)
+// Defined at Common:: scope (NOT in the anonymous namespace) so it has external
+// linkage and the crash reporter can link against it.
+extern "C" bool eden_guest_memory_oom(std::uint64_t* held, std::uint64_t* failures,
+                                      std::uint64_t* reserve_used, std::uint64_t* promotions,
+                                      std::uint64_t* faults) noexcept {
+    const auto count = counters.failures.load(std::memory_order_acquire);
+    if (count == 0) return false;
+    *held = guest_committed.load(std::memory_order_relaxed);
+    *failures = count;
+    *reserve_used = counters.reserve_used.load(std::memory_order_relaxed);
+    *promotions = counters.promotions.load(std::memory_order_relaxed);
+    *faults = counters.faults.load(std::memory_order_relaxed);
+    return true;
+}
+
 void* ReserveMemoryRange(std::size_t size) noexcept {
     if (size == 0 || size % LargePage != 0) return nullptr;
 #ifdef PS5_NATIVE
