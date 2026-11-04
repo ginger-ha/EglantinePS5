@@ -29,7 +29,6 @@ int sceKernelUsleep(unsigned);
 std::int64_t sceKernelGetDirectMemorySize();
 std::int32_t sceKernelAvailableDirectMemorySize(std::int64_t, std::int64_t, std::size_t, std::int64_t*, std::size_t*);
 std::size_t eden_heap_committed(void);
-extern "C" bool eden_guest_memory_oom(std::uint64_t*, std::uint64_t*, std::uint64_t*, std::uint64_t*, std::uint64_t*) noexcept;
 std::size_t eden_heap_large_held(unsigned* blocks);
 #endif
 // The app's code, from the link (tools/unwind.ld).
@@ -288,6 +287,8 @@ void PutRegister(const char* before, const char* name, std::uint64_t value) noex
     report.Put(' ');
     report.Hex(value, 16);
 }
+
+extern "C" bool eden_guest_memory_oom(std::uint64_t*, std::uint64_t*, std::uint64_t*, std::uint64_t*, std::uint64_t*) noexcept;
 
 // Guest memory exhaustion in the crash report (Portablelle 704b3be1b, 2026-11-04).
 // Only atomics and bounded buffer formatting; never touch stdio in a fault.
