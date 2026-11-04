@@ -78,6 +78,7 @@ extern "C" std::int64_t sceKernelGetDirectMemorySize();
 #include "core/frontend/graphics_context.h"
 #include "core/hle/service/am/applet_manager.h"
 #include "core/hle/service/am/frontend/applets.h"
+#include "core/file_sys/nup_container.h"
 #include "core/file_sys/registered_cache.h"
 #include "core/hle/service/filesystem/filesystem.h"
 #include "core/hle/service/set/settings_types.h"
@@ -1272,9 +1273,12 @@ int main(int argc, char** argv) {
                 // the patch manager looks the base up here, and without it applied only the update's
                 // code, which then ran against the old data. It also gives Eden the game's control data.
                 game_contents.ClearAllEntries();
-                if (game && guest && !game_contents.AddEntriesFromContainer(
-                        system.GetFilesystem()->OpenFile(guest, FileSys::OpenMode::Read)))
-                    Eden::Report("loader", "Game contents not registered; an update's data will not apply");
+                if (game && guest) {
+                    // A NUP holds no NCAs: its loader applies the update itself and offers the DLC.
+                    const auto contents = system.GetFilesystem()->OpenFile(guest, FileSys::OpenMode::Read);
+                    if (!FileSys::NupContainer::IsNupFile(contents) && !game_contents.AddEntriesFromContainer(contents))
+                        Eden::Report("loader", "Game contents not registered; an update's data will not apply");
+                }
                 system.RegisterContentProvider(FileSys::ContentProviderUnionSlot::FrontendManual, &game_contents);
                 {
                     Service::AM::Frontend::FrontendAppletSet applets;

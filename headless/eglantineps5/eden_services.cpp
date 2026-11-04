@@ -845,6 +845,7 @@ pe::ui::Home EdenServices::home() {
     // chosen one, the caption says so.
     if (home.setup_ready && home.last_exists) {
         eden_scan_addons(Eden::AssetsPath("updates").c_str(), Eden::AssetsPath("keys").c_str());
+        eden_note_nup_addons(last_path.c_str());
         const uint64_t title_id = eden_game_title_id(last_path.c_str());
         const GameLanguage language = LanguageFor(last_path, title_id, Eden::PreferencesFor(title_id).language);
         home.last_title_id = title_id;
@@ -1116,6 +1117,7 @@ std::vector<pe::ui::Game> EdenServices::games() {
             game.title_id = eden_game_title_id(path.c_str());
             // The game's own language (Library > Game settings > Language) or Settings > Language.
             const GameLanguage language = LanguageFor(path, game.title_id, Eden::PreferencesFor(game.title_id).language);
+            eden_note_nup_addons(path.c_str());
             game.addons = AddOnSummary(game.title_id);
             game.addons_short = AddOnSummary(game.title_id, true);
             game.language = language.label;

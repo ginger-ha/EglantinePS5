@@ -38,6 +38,7 @@
 
 #include "common/fs/path_util.h"
 #include "core/file_sys/card_image.h"
+#include "core/file_sys/nup_container.h"
 #include "core/file_sys/common_funcs.h"
 #include "core/file_sys/content_archive.h"
 #include "core/file_sys/control_metadata.h"
@@ -510,10 +511,18 @@ uint32_t eden_game_supported_languages(const char* rom_path, const char* keys_di
     }
 }
 
+// The base package of a NUP, or the newest update's when there is no base.
+const FileSys::NupContainer::PackageInfo* NupProgramPackage(const FileSys::NupContainer& nup) {
+    if (nup.GetStatus() != Loader::ResultStatus::Success) return nullptr;
+    auto index = nup.FindBasePackage();
+    if (!index) index = nup.FindBestUpdatePackage();
+    return index ? &nup.GetPackages()[*index] : nullptr;
+}
+
 namespace {
 struct AddOns {
     std::string update;
-    unsigned dlc = 0;
+    std::set<uint64_t> dlc;
     uint32_t languages = 0;  // the update's own language flags (its control data replaces the game's)
 };
 // Base title ID -> its update and DLC files, from the last eden_scan_addons.
@@ -548,12 +557,33 @@ void eden_scan_addons(const char* updates_dir, const char* keys_dir) {
                 if (const auto romfs = control->GetRomFS())
                     if (const auto files = FileSys::ExtractRomFS(romfs)) addons.languages = ReadLanguages(files);
         }
-        std::set<uint64_t> dlc;
         for (const auto& entry : provider.ListEntriesFilter(FileSys::TitleType::AOC, std::nullopt, std::nullopt))
-            if (dlc.insert(entry.title_id).second) ++scanned[FileSys::GetBaseTitleID(entry.title_id)].dlc;
+            scanned[FileSys::GetBaseTitleID(entry.title_id)].dlc.insert(entry.title_id);
     } catch (const std::exception& error) {
         std::fprintf(stderr, "[EglantinePS5] updates: %s\n", error.what());
         scanned.clear();
+    }
+}
+
+void eden_note_nup_addons(const char* rom_path) {
+    if (!rom_path) return;
+    try {
+        FileSys::RealVfsFilesystem vfs;
+        const auto file = vfs.OpenFile(rom_path, FileSys::OpenMode::Read);
+        if (!file || !FileSys::NupContainer::IsNupFile(file)) return;
+        const FileSys::NupContainer nup(file);
+        const auto* program = NupProgramPackage(nup);
+        if (!program) return;
+        auto& addons = ScannedAddOns()[FileSys::GetBaseTitleID(program->title_id)];
+        if (const auto update = nup.FindBestUpdatePackage()) {
+            const auto& package = nup.GetPackages()[*update];
+            addons.update = package.display_version.empty() ? "v" + std::to_string(package.version)
+                                                            : package.display_version;
+        }
+        for (const auto& package : nup.GetPackages())
+            if (package.kind == FileSys::NupContainer::PackageKind::Addon) addons.dlc.insert(package.title_id);
+    } catch (const std::exception& error) {
+        std::fprintf(stderr, "[EglantinePS5] nup: %s\n", error.what());
     }
 }
 
@@ -633,8 +663,8 @@ int eden_game_addons(uint64_t title_id, char* update_version, size_t capacity, u
     const auto found = scanned.find(FileSys::GetBaseTitleID(title_id));
     if (!title_id || found == scanned.end()) return 0;
     if (update_version && capacity) std::snprintf(update_version, capacity, "%s", found->second.update.c_str());
-    if (dlc_count) *dlc_count = found->second.dlc;
-    return !found->second.update.empty() || found->second.dlc != 0;
+    if (dlc_count) *dlc_count = static_cast<unsigned>(found->second.dlc.size());
+    return !found->second.update.empty() || !found->second.dlc.empty();
 }
 
 namespace {
