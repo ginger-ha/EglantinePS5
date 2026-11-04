@@ -1072,6 +1072,10 @@ void ServiceStart(SparseRange& range) noexcept {
     }
     ResetCounters();
     range.promote = true;
+    const std::size_t range_size = range.end - range.begin.load(std::memory_order_relaxed);
+    if ((range_size > (4ull << 30) || DevSetting("cram_fine=on")) && !DevSetting("cram_fine=off")) {
+        fine_requested.store(true, std::memory_order_relaxed);
+    }
 #ifdef PS5_NATIVE
     FillReserve(ReserveAtStart);
 #endif

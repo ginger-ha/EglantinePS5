@@ -599,7 +599,8 @@ adapt('src/video_core/renderer_vulkan/vk_staging_buffer_pool.cpp', 'vulkan_stagi
      '        if (refused.GetResult() != VK_ERROR_OUT_OF_DEVICE_MEMORY) {\n'
      '            throw;\n'
      '        }\n'
-     '        // Refused: sync with the worker and trim heap before letting kept buffers go\n'
+     '        // Refused: wait for GPU to finish and trim heap before letting kept buffers go\n'
+     '        scheduler.Wait(scheduler.CurrentTick());\n'
      '        scheduler.WaitWorker();\n'
      '        ::Eden::Performance::TrimHeap("staging OOM");\n'
      '        const auto idle = [this](const StagingBuffer& entry) {\n'
@@ -617,7 +618,15 @@ adapt('src/video_core/renderer_vulkan/vk_staging_buffer_pool.cpp', 'vulkan_stagi
      '        if (buffer_ci.size > size) {\n'
      '            buffer_ci.size = (size + 65535ULL) & ~65535ULL;\n'
      '        }\n'
-     '        buffer = memory_allocator.CreateBuffer(buffer_ci, usage);\n'
+     '        try {\n'
+     '            buffer = memory_allocator.CreateBuffer(buffer_ci, usage);\n'
+     '        } catch (const vk::Exception&) {\n'
+     '            if (usage == MemoryUsage::DeviceLocal) {\n'
+     '                buffer = memory_allocator.CreateBuffer(buffer_ci, MemoryUsage::Upload);\n'
+     '            } else {\n'
+     '                throw;\n'
+     '            }\n'
+     '        }\n'
      '    }\n'
      '    // A large buffer smaller than the power of two: the 1st, 2nd, 4th, 8th ... in the log.\n'
      '    if (exact && made >= (VkDeviceSize{64} << 20) && made < (VkDeviceSize{1} << log2_size)) {\n'
@@ -1291,7 +1300,7 @@ probes = {
 }
 for name, index, expected in (
     ('vk_fence_manager', 6, 1), ('vk_buffer_cache', 7, 3),
-    ('vk_texture_cache', 8, 1), ('vk_swapchain', 9, 6),
+    ('vk_texture_cache', 8, 2), ('vk_swapchain', 9, 6),
     ('vk_descriptor_buffer', 10, 2), ('vk_multi_range_buffer', 11, 1),
     ('vk_compute_pass', 12, 1),
 ):

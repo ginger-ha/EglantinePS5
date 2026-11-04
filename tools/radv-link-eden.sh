@@ -20,10 +20,14 @@ eden_radv_link_recipe() {
     # is not one of its own.
     local platform_archive="$root/build/libps5platform-nfs.a" i
     mkdir -p "$root/build"
-    cp "$radv_sdk/target/lib/libps5platform.a" "$platform_archive"
-    "$(command -v llvm-objcopy-18 || command -v llvm-objcopy)" \
-        --redefine-sym __wrap_fclose=ps5_memstream_fclose \
-        --redefine-sym __wrap_fflush=ps5_memstream_fflush "$platform_archive"
+    if [[ ! -f "$platform_archive" ]]; then
+        local tmp="$platform_archive.$$.tmp"
+        cp "$radv_sdk/target/lib/libps5platform.a" "$tmp"
+        "$(command -v llvm-objcopy-18 || command -v llvm-objcopy)" \
+            --redefine-sym __wrap_fclose=ps5_memstream_fclose \
+            --redefine-sym __wrap_fflush=ps5_memstream_fflush "$tmp"
+        mv -f "$tmp" "$platform_archive"
+    fi
     for i in "${!radv_link_inputs[@]}"; do
         [[ ${radv_link_inputs[i]} == "$radv_sdk/target/lib/libps5platform.a" ]] && radv_link_inputs[i]="$platform_archive"
     done
