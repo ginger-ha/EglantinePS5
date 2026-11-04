@@ -375,6 +375,23 @@ static void RefreshFreeMemory() {
     const PoolView view = ViewOfPool(known, largest, held, target);
     largest_free_block.store(known ? (view.free != 0 ? view.free : 1) : 0, std::memory_order_relaxed);
     graphics_memory_short.store(view.short_memory, std::memory_order_relaxed);
+    /* Fragmentation early warning (2026-11-04): log when the largest free block
+     * crosses below 1 GiB / 512 MiB / 256 MiB, for tomorrow's verification. */
+    {
+        static std::atomic<unsigned> warned_level{0};
+        const unsigned long long free_mib = largest >> 20;
+        unsigned level = 0;
+        if (free_mib < 256) level = 3;
+        else if (free_mib < 512) level = 2;
+        else if (free_mib < 1024) level = 1;
+        unsigned prev = warned_level.load(std::memory_order_relaxed);
+        if (level > prev && warned_level.compare_exchange_strong(prev, level, std::memory_order_relaxed)) {
+            std::fprintf(stderr, "EDEN_FRAG_WARN largest free block %llu MiB (level %u)\n",
+                         free_mib, level);
+        } else if (level < prev) {
+            warned_level.store(level, std::memory_order_relaxed);
+        }
+    }
     // The pool, the guest's memory and the heap in stderr.log every 20 s, to see what holds it.
     static std::atomic<long long> summary_ns{0};
     if (now - summary_ns.load(std::memory_order_relaxed) >= 20'000'000'000) {
