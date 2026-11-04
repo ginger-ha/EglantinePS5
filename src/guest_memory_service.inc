@@ -668,6 +668,10 @@ std::thread scanner;
 std::mutex scanner_mutex;
 std::condition_variable scanner_wake;
 bool scanner_stop = false;
+
+extern "C" void eden_cram_wake_scanner(void) noexcept {
+    scanner_wake.notify_all();
+}
 #ifdef PS5_NATIVE
 // The reserve kept full: every 100 ms, so a burst of writes that used it finds it whole again as
 // soon as the caches have given memory back (the scanner only passes every 20 s).
@@ -934,7 +938,8 @@ void ScannerLoop(SparseRange* range) {
     auto next_report = std::chrono::steady_clock::now() + std::chrono::seconds(30);
     std::unique_lock lock{scanner_mutex};
     while (!scanner_stop) {
-        scanner_wake.wait_for(lock, std::chrono::seconds(20), [] { return scanner_stop; });
+        const auto interval = fine_requested.load(std::memory_order_relaxed) ? std::chrono::seconds(5) : std::chrono::seconds(20);
+        scanner_wake.wait_for(lock, interval, [] { return scanner_stop; });
         if (scanner_stop) break;
         lock.unlock();
         if (scan_requested.load(std::memory_order_relaxed)) ScanPass(*range);

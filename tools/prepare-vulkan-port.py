@@ -571,7 +571,7 @@ adapt('src/video_core/vulkan_common/vulkan_memory_allocator.cpp', 'vulkan_memory
 # 480 MiB free. No Finish() when releasing: a buffer handed out earlier may not have its copy recorded.
 adapt('src/video_core/renderer_vulkan/vk_staging_buffer_pool.cpp', 'vulkan_staging_buffer_pool.cpp', [
     ('#include "video_core/vulkan_common/vulkan_wrapper.h"\n',
-     '#include "video_core/vulkan_common/vulkan_wrapper.h"\n#include <atomic>\n#include <cstdio>\n#include "staging_buffers.h"\n#include "performance.h"\n'),
+     '#include "video_core/vulkan_common/vulkan_wrapper.h"\n#include <atomic>\n#include <cstdio>\n#include <ctime>\n#include "staging_buffers.h"\n#include "performance.h"\n'),
     ('    const auto is_free = [this](const StagingBuffer& entry) {\n'
      '        return !entry.deferred && scheduler.IsFree(entry.tick);\n'
      '    };',
@@ -618,13 +618,25 @@ adapt('src/video_core/renderer_vulkan/vk_staging_buffer_pool.cpp', 'vulkan_stagi
      '        if (buffer_ci.size > size) {\n'
      '            buffer_ci.size = (size + 65535ULL) & ~65535ULL;\n'
      '        }\n'
-     '        try {\n'
-     '            buffer = memory_allocator.CreateBuffer(buffer_ci, usage);\n'
-     '        } catch (const vk::Exception&) {\n'
-     '            if (usage == MemoryUsage::DeviceLocal) {\n'
-     '                buffer = memory_allocator.CreateBuffer(buffer_ci, MemoryUsage::Upload);\n'
-     '            } else {\n'
-     '                throw;\n'
+     '        bool created = false;\n'
+     '        for (int retry = 0; retry < 5 && !created; ++retry) {\n'
+     '            if (retry > 0) {\n'
+     '                const timespec pause{0, 50\'000\'000};\n'
+     '                nanosleep(&pause, nullptr);\n'
+     '                ::Eden::Performance::TrimHeap("staging OOM retry");\n'
+     '            }\n'
+     '            try {\n'
+     '                buffer = memory_allocator.CreateBuffer(buffer_ci, usage);\n'
+     '                created = true;\n'
+     '            } catch (const vk::Exception&) {\n'
+     '                if (retry == 4) {\n'
+     '                    if (usage == MemoryUsage::DeviceLocal) {\n'
+     '                        buffer = memory_allocator.CreateBuffer(buffer_ci, MemoryUsage::Upload);\n'
+     '                        created = true;\n'
+     '                    } else {\n'
+     '                        throw;\n'
+     '                    }\n'
+     '                }\n'
      '            }\n'
      '        }\n'
      '    }\n'

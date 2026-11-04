@@ -345,6 +345,7 @@ extern "C" std::size_t eden_heap_trim(void) __attribute__((weak));
 extern "C" void eden_heap_sites_report(void) __attribute__((weak));
 extern "C" void eden_heap_usage(std::size_t* held, std::size_t* in_use, std::size_t* returned) __attribute__((weak));
 extern "C" unsigned eden_guest_memory_wanted(void) __attribute__((weak));
+extern "C" void eden_cram_wake_scanner(void) __attribute__((weak));
 extern "C" void eden_guest_memory_reserve(std::size_t* held, std::size_t* target) __attribute__((weak));
 #ifdef PS5_NATIVE
 extern "C" std::int64_t sceKernelGetDirectMemorySize();
@@ -439,6 +440,7 @@ void ReportHeap(const char* why) {
 }
 
 std::size_t TrimHeap(const char* why) {
+    if (eden_cram_wake_scanner) eden_cram_wake_scanner();
     if (!eden_heap_trim) return 0;
     const std::size_t returned = eden_heap_trim();
     if (returned != 0) {
