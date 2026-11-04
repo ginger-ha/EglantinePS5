@@ -665,6 +665,25 @@ size_t eden_heap_trim(void) {
   }
   atomic_flag_clear_explicit(&eden_heap_grow_lock, memory_order_release);
   atomic_fetch_add_explicit(&eden_heap_returned_bytes, returned, memory_order_relaxed);
+  /* Fragmentation breakdown (2026-11-04): spaces with few blocks hold most of the
+   * waste; empty ones were just reclaimed above. Logged on every trim for tomorrow. */
+  {
+    unsigned empty = 0, sparse = 0, dense = 0;
+    size_t sparse_bytes = 0;
+    for (unsigned s = 0; s < count; ++s) {
+      const unsigned span = eden_heap_space_span[s];
+      if (span == 0) continue;
+      const long blocks = atomic_load_explicit(&eden_heap_space_blocks[s], memory_order_relaxed);
+      if (blocks == 0) ++empty;
+      else if (blocks <= 10) { ++sparse; sparse_bytes += (size_t)span << EDEN_HEAP_PIECE_SHIFT; }
+      else ++dense;
+    }
+    if (sparse != 0 || empty != 0) {
+      fprintf(stderr,
+              "EDEN_HEAP_FRAG spaces=%u empty=%u sparse=%u dense=%u sparse_bytes=%zuMiB returned=%zuMiB\n",
+              count, empty, sparse, dense, sparse_bytes >> 20, returned >> 20);
+    }
+  }
   return returned;
 }
 
