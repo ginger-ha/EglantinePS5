@@ -429,6 +429,21 @@ extern "C" std::uintptr_t eden_guest_write_refused(unsigned* why, unsigned* stat
     return address;
 }
 
+// Lock-free, best-effort snapshot for the crash reporter: true if the guest's
+// memory was ever exhausted (failures > 0). (Portablelle 704b3be1b, 2026-11-04)
+extern "C" bool eden_guest_memory_oom(std::uint64_t* held, std::uint64_t* failures,
+                                      std::uint64_t* reserve_used, std::uint64_t* promotions,
+                                      std::uint64_t* faults) noexcept {
+    const auto count = counters.failures.load(std::memory_order_acquire);
+    if (count == 0) return false;
+    *held = guest_committed.load(std::memory_order_relaxed);
+    *failures = count;
+    *reserve_used = counters.reserve_used.load(std::memory_order_relaxed);
+    *promotions = counters.promotions.load(std::memory_order_relaxed);
+    *faults = counters.faults.load(std::memory_order_relaxed);
+    return true;
+}
+
 #ifdef PS5_NATIVE
 extern "C" const char __eden_text_start[] __attribute__((weak));
 extern "C" const char __eden_text_end[] __attribute__((weak));
