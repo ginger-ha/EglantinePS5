@@ -227,7 +227,7 @@ uint64_t eden_game_title_id(const char* rom_path) {
     Common::FS::SetEdenPath(Common::FS::EdenPath::KeysDir, Eden::AssetsPath("keys"));
     const std::string_view named{rom_path};
     const bool is_folder = named.ends_with("/exefs/main") || named.ends_with(".dir") ||
-                           (!named.ends_with(".nsp") && !named.ends_with(".xci"));
+                           (!named.ends_with(".nsp") && !named.ends_with(".xci") && !named.ends_with(".nup"));
     if (is_folder) {
         const auto dirs = GetFolderGameCandidateDirs(rom_path);
         // 1. Try reading main.npdm with full file buffer
@@ -307,6 +307,11 @@ uint64_t eden_game_title_id(const char* rom_path) {
         FileSys::NSP package(file);
         return package.GetStatus() == Loader::ResultStatus::Success ? package.GetProgramTitleID() : 0;
     }
+    if (path.ends_with(".nup")) {
+        const FileSys::NupContainer nup(file);
+        const auto* package = NupProgramPackage(nup);
+        return package ? package->title_id : 0;
+    }
     return 0;
 }
 
@@ -319,7 +324,7 @@ int eden_extract_game_metadata(const char* rom_path, const char* keys_dir,
 
     const std::string_view named{rom_path};
     const bool is_folder = named.ends_with("/exefs/main") || named.ends_with(".dir") ||
-                           (!named.ends_with(".nsp") && !named.ends_with(".xci"));
+                           (!named.ends_with(".nsp") && !named.ends_with(".xci") && !named.ends_with(".nup"));
 
     // Folder game extraction
     if (is_folder) {
@@ -458,6 +463,20 @@ int eden_extract_game_metadata(const char* rom_path, const char* keys_dir,
     std::string path = rom_path;
     std::transform(path.begin(), path.end(), path.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    if (path.ends_with(".nup")) {
+        const FileSys::NupContainer nup(file);
+        const auto* package = NupProgramPackage(nup);
+        if (!package) return 0;
+        GameLanguages()[rom_path] = kNupLanguages;
+        int nup_result = 0;
+        if (const std::string name = NupTitle(*package); !name.empty()) {
+            std::snprintf(title, title_capacity, "%s", name.c_str());
+            nup_result |= EDEN_METADATA_TITLE;
+        }
+        if (!package->icon.empty() && WriteTgaBytes(package->icon.data(), package->icon.size(), cover_tga_path, 4096))
+            nup_result |= EDEN_METADATA_COVER;
+        return nup_result;
+    }
     const bool xci = path.size() >= 4 && path.substr(path.size() - 4) == ".xci";
     const auto romfs = OpenControlRomFs(file, xci);
     if (!romfs) return 0;
@@ -517,6 +536,18 @@ const FileSys::NupContainer::PackageInfo* NupProgramPackage(const FileSys::NupCo
     auto index = nup.FindBasePackage();
     if (!index) index = nup.FindBestUpdatePackage();
     return index ? &nup.GetPackages()[*index] : nullptr;
+}
+
+// A NUP package (a base game with its updates and DLC in one file): the game's name, icon and
+// title ID come from the package its program is in. Its languages are the ones the loader declares.
+constexpr uint32_t kNupLanguages = 0x3FFFF;
+
+std::string NupTitle(const FileSys::NupContainer::PackageInfo& package) {
+    std::vector<std::string> names{package.title_name};
+    for (const auto& [language, name] : package.localized_titles) names.push_back(name);
+    for (const std::string& name : names)
+        if (!name.empty() && Eden::UsableName(name.c_str())) return Eden::PlainName(name.c_str());
+    return {};
 }
 
 namespace {
