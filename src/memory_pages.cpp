@@ -991,9 +991,10 @@ bool CommitCodeRange(const void* executable, std::size_t bytes) noexcept {
             committed += CodeStep;
             range.committed.store(committed, std::memory_order_release);
         }
-        char line[112];
-        const int length = std::snprintf(line, sizeof(line), "EDEN_JIT_MEMORY code=%p held=%zu of=%zu\n", executable,
-                                         committed, range.span);
+        char line[160];
+        const std::size_t jit_total = code_committed.load(std::memory_order_relaxed);
+        const int length = std::snprintf(line, sizeof(line), "EDEN_JIT_MEMORY code=%p held=%zu of=%zu total=%zuMiB\n", executable,
+                                         committed, range.span, jit_total >> 20);
         if (length > 0) Report(line);
         return true;
     }
