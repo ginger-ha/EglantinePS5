@@ -36,11 +36,13 @@ extern const char __eden_text_start[];
 extern const char __eden_text_end[];
 }
 
+#ifdef PS5_NATIVE
 // Defined in src/memory_pages.cpp at ::Common scope.
 namespace Common {
 bool eden_guest_memory_oom(std::uint64_t*, std::uint64_t*, std::uint64_t*, std::uint64_t*,
                            std::uint64_t*) noexcept;
 }
+#endif
 
 namespace Eden::Crash {
 namespace {
@@ -295,6 +297,7 @@ void PutRegister(const char* before, const char* name, std::uint64_t value) noex
 }
 
 
+#ifdef PS5_NATIVE
 // Guest memory exhaustion in the crash report (Portablelle 704b3be1b, 2026-11-04).
 // Only atomics and bounded buffer formatting; never touch stdio in a fault.
 void PutGuestMemoryOom() noexcept {
@@ -312,6 +315,7 @@ void PutGuestMemoryOom() noexcept {
     t.Put(" faults=");
     t.Dec(faults);
 }
+#endif
 
 // The report, complete in its buffer.
 void Compose(const Kind* kind, int code, std::uint64_t address, const Registers& r, const char* reason,
@@ -355,7 +359,9 @@ void Compose(const Kind* kind, int code, std::uint64_t address, const Registers&
         t.Put("\nreason: ");
         t.Put(reason);
     }
+#ifdef PS5_NATIVE
     PutGuestMemoryOom();
+#endif
     t.Put("\nwhere: ");
     t.Address(r.rip);
     if (!InCode(r.rip)) t.Put(" (outside the app's code: a system library or generated code)");
