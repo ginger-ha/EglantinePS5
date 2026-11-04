@@ -222,6 +222,25 @@ static std::vector<std::string> GetFolderGameCandidateDirs(std::string_view rom_
     return dirs;
 }
 
+const FileSys::NupContainer::PackageInfo* NupProgramPackage(const FileSys::NupContainer& nup) {
+    if (nup.GetStatus() != Loader::ResultStatus::Success) return nullptr;
+    auto index = nup.FindBasePackage();
+    if (!index) index = nup.FindBestUpdatePackage();
+    return index ? &nup.GetPackages()[*index] : nullptr;
+}
+
+// A NUP package (a base game with its updates and DLC in one file): the game's name, icon and
+// title ID come from the package its program is in. Its languages are the ones the loader declares.
+constexpr uint32_t kNupLanguages = 0x3FFFF;
+
+std::string NupTitle(const FileSys::NupContainer::PackageInfo& package) {
+    std::vector<std::string> names{package.title_name};
+    for (const auto& [language, name] : package.localized_titles) names.push_back(name);
+    for (const std::string& name : names)
+        if (!name.empty() && Eden::UsableName(name.c_str())) return Eden::PlainName(name.c_str());
+    return {};
+}
+
 uint64_t eden_game_title_id(const char* rom_path) {
     if (!rom_path) return 0;
     Common::FS::SetEdenPath(Common::FS::EdenPath::KeysDir, Eden::AssetsPath("keys"));
@@ -531,25 +550,6 @@ uint32_t eden_game_supported_languages(const char* rom_path, const char* keys_di
 }
 
 // The base package of a NUP, or the newest update's when there is no base.
-const FileSys::NupContainer::PackageInfo* NupProgramPackage(const FileSys::NupContainer& nup) {
-    if (nup.GetStatus() != Loader::ResultStatus::Success) return nullptr;
-    auto index = nup.FindBasePackage();
-    if (!index) index = nup.FindBestUpdatePackage();
-    return index ? &nup.GetPackages()[*index] : nullptr;
-}
-
-// A NUP package (a base game with its updates and DLC in one file): the game's name, icon and
-// title ID come from the package its program is in. Its languages are the ones the loader declares.
-constexpr uint32_t kNupLanguages = 0x3FFFF;
-
-std::string NupTitle(const FileSys::NupContainer::PackageInfo& package) {
-    std::vector<std::string> names{package.title_name};
-    for (const auto& [language, name] : package.localized_titles) names.push_back(name);
-    for (const std::string& name : names)
-        if (!name.empty() && Eden::UsableName(name.c_str())) return Eden::PlainName(name.c_str());
-    return {};
-}
-
 namespace {
 struct AddOns {
     std::string update;
