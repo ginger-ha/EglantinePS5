@@ -36,6 +36,12 @@ extern const char __eden_text_start[];
 extern const char __eden_text_end[];
 }
 
+// Defined in src/memory_pages.cpp at ::Common scope.
+namespace Common {
+bool eden_guest_memory_oom(std::uint64_t*, std::uint64_t*, std::uint64_t*, std::uint64_t*,
+                           std::uint64_t*) noexcept;
+}
+
 namespace Eden::Crash {
 namespace {
 
@@ -288,10 +294,6 @@ void PutRegister(const char* before, const char* name, std::uint64_t value) noex
     report.Hex(value, 16);
 }
 
-namespace Common {
-bool eden_guest_memory_oom(std::uint64_t*, std::uint64_t*, std::uint64_t*, std::uint64_t*,
-                           std::uint64_t*) noexcept;
-}
 
 // Guest memory exhaustion in the crash report (Portablelle 704b3be1b, 2026-11-04).
 // Only atomics and bounded buffer formatting; never touch stdio in a fault.
