@@ -18,7 +18,11 @@ builds on the following projects, each under its own license.
 - **[Catch2](https://github.com/catchorg/Catch2)**, BSL-1.0. Used by the focused
   host regression check at the version and source hash pinned by the core.
 - **[FFmpeg](https://ffmpeg.org)**, LGPL-2.1-or-later. Built from Eden's pinned
-  source with only the H.264, VP8 and VP9 decoders.
+  source with only the H.264, VP8 and VP9 decoders, and AV1 through dav1d.
+- **[dav1d](https://code.videolan.org/videolan/dav1d)** by VideoLAN and the dav1d
+  authors, BSD-2-Clause (`licenses/dav1d-BSD-2-Clause.txt` in the app). FFmpeg's
+  AV1 decoder, for the movies of Switch 2 games. Fetched at the release pinned in
+  `tools/deps.json`.
 - **[OpenSSL](https://www.openssl.org)**, Apache-2.0, and
   **[zlib](https://zlib.net)**, zlib license. Taken from the
   [pacbrew](https://github.com/ps5-payload-dev/pacbrew-repo) PS5 packages.

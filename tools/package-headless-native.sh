@@ -48,6 +48,8 @@ cp "$root/build/lapy-owned-helper/lapy.elf" "$app/lapy.elf"
 cp "$root/build/lapy-owned-helper/lapy-manifest.json" "$app/lapy-manifest.json"
 mkdir -p "$app/licenses"
 cp "$root/build/lapy-owned-helper/LICENSE.Lapy" "$app/licenses/Lapy-MIT.txt"
+# dav1d (BSD-2-Clause) is linked into eboot.bin: its notice goes with the binary.
+cp "$root/.deps/dav1d-1.5.1/COPYING" "$app/licenses/dav1d-BSD-2-Clause.txt"
 # What the console's home screen shows for the title is in sce_sys/, as it goes into the package
 # (the source pictures beside it stay in the repository).
 # The self-update helper (headless/self_update_helper, the boilerplate's) is an ordinary payload:

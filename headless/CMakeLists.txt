@@ -2398,6 +2398,12 @@ list(APPEND common_sources "${PORT_BUILD_DIR}/multi_level_page_table.cpp")
     # Prefer this build's matching decoder headers over the C dependency
     # bundle's older FFmpeg headers exposed through OpenSSL's include root.
     target_include_directories(video_core BEFORE PRIVATE "${FFmpeg_INCLUDE_DIR}")
+    # FFmpeg's AV1 decoder (libdav1d, tools/build-headless-dav1d.sh) is a static library of its
+    # own, after libavcodec on the link line: FindFFmpeg lists only FFmpeg's.
+    if(NOT EXISTS "${FFMPEG_DIR}/lib/libdav1d.a")
+        message(FATAL_ERROR "No libdav1d.a in ${FFMPEG_DIR}/lib: run tools/build-headless-ffmpeg.sh")
+    endif()
+    target_link_libraries(video_core PRIVATE "${FFMPEG_DIR}/lib/libdav1d.a")
     # The older SDK omits DCCP's IP protocol name (wire value 33, also used by
     # Service::Sockets::Protocol). socket() still decides runtime support.
     get_target_property(core_sources core SOURCES)
