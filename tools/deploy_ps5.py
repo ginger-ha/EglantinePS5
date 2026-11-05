@@ -12,11 +12,11 @@ import json
 import urllib.request
 import urllib.parse
 
-DEFAULT_IP = os.environ.get("PS5_IP", "192.168.88.33")
+DEFAULT_IP = os.environ.get("PS5_IP", "192.168.88.31")
 FTP_PORT = int(os.environ.get("PS5_FTP_PORT", "2121"))
 HTTP_PORT = int(os.environ.get("PS5_PORT", "8888"))
 LOCAL_FILE = "build/release/PPSA98515/eboot.bin"
-TARGET_DIRS = ["/mnt/usb1/PPSA98515", "/mnt/usb1/homebrew/PPSA98515"]
+TARGET_DIRS = ["/mnt/usb1/PPSA98515", "/mnt/usb1/homebrew/PPSA98515", "/data/homebrew/PPSA98515"]
 
 def is_port_open(ip, port):
     s = socket.socket()
